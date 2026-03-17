@@ -1,5 +1,3 @@
-import { useMemo } from "react";
-
 import { create } from "zustand";
 import { subscribeWithSelector } from "zustand/middleware";
 
@@ -15,9 +13,19 @@ import type {
   TradeRecord
 } from "@/lib/types";
 
+// ---------------------------------------------------------------------
+// 这个文件是“行情内存模型”：
+// - websocket-provider 负责收消息与节流
+// - market-store 负责把消息落地成可渲染结构
+// - 对外暴露最小状态写入接口（读取 hooks 已拆分到 lib/hooks.ts）
+// ---------------------------------------------------------------------
+
 const DEFAULT_MARKET: MarketId = "BTC-PERP";
 const MAX_RECENT_TRADES = 120;
+const MAX_BOOK_LEVELS_PER_SIDE = 500;
 
+// 每个动画帧内聚合的增量数据：
+// WebSocket 高频消息先写入 frame，再批量提交到 store。
 export interface BufferedFrame {
   deltas: BookDeltaMessage[];
   trades: TradeRecord[];
@@ -26,10 +34,14 @@ export interface BufferedFrame {
 
 interface MarketStoreState {
   marketId: MarketId;
+  // book 用 Map 存储（price -> size），增量更新/删除更高效。
   bids: Map<number, number>;
   asks: Map<number, number>;
+  // 最近成交按“新到旧”排列（index 0 永远最新）。
   trades: TradeRecord[];
   lastSeq: number;
+  // version 是“重算开关”：
+  // Map 是可变结构，引用不一定变化，所以需要显式版本号驱动 selector 重算。
   bookVersion: number;
   tradeVersion: number;
   connectionState: ConnectionState;
@@ -52,6 +64,8 @@ interface MarketStoreState {
   markPong: (ts: number) => void;
 }
 
+// 将快照数组转为 Map：
+// key=price, value=size，后续增量更新 O(1)。
 function buildSideMap(levels: PriceLevel[]): Map<number, number> {
   const next = new Map<number, number>();
 
@@ -67,6 +81,8 @@ function buildSideMap(levels: PriceLevel[]): Map<number, number> {
   return next;
 }
 
+// 应用增量档位：
+// size=0 代表删除该价格档；否则写入/覆盖该档。
 function applyLevels(side: Map<number, number>, levels: PriceLevel[]): boolean {
   let changed = false;
 
@@ -88,11 +104,31 @@ function applyLevels(side: Map<number, number>, levels: PriceLevel[]): boolean {
   return changed;
 }
 
+// 防御性裁剪：限制单侧档位数量，避免滚动高度和内存无限增长。
+function trimBookSide(side: Map<number, number>, bookSide: "bids" | "asks"): boolean {
+  if (side.size <= MAX_BOOK_LEVELS_PER_SIDE) {
+    return false;
+  }
+
+  const sortedPrices = Array.from(side.keys()).sort((left, right) =>
+    bookSide === "bids" ? right - left : left - right
+  );
+  let changed = false;
+
+  for (const price of sortedPrices.slice(MAX_BOOK_LEVELS_PER_SIDE)) {
+    changed = side.delete(price) || changed;
+  }
+
+  return changed;
+}
+
+// 交易去重后前插，始终保留最近 MAX_RECENT_TRADES 条。
 function mergeTrades(current: TradeRecord[], incoming: TradeRecord[]): TradeRecord[] {
   if (incoming.length === 0) {
     return current;
   }
 
+  // 以 tradeId 去重，防止网络抖动导致重复推送。
   const seen = new Set(current.map((trade) => trade.tradeId));
   const fresh = incoming.filter((trade) => !seen.has(trade.tradeId));
 
@@ -103,6 +139,9 @@ function mergeTrades(current: TradeRecord[], incoming: TradeRecord[]): TradeReco
   return [...fresh.reverse(), ...current].slice(0, MAX_RECENT_TRADES);
 }
 
+// Zustand 全局行情仓库：
+// - book 用 Map 存，更新高效
+// - version 字段驱动 selector 精准重算，减少无意义渲染
 export const useMarketStore = create<MarketStoreState>()(
   subscribeWithSelector((set) => ({
     marketId: DEFAULT_MARKET,
@@ -122,6 +161,7 @@ export const useMarketStore = create<MarketStoreState>()(
     },
     error: null,
     resetMarket: (marketId) =>
+      // 切市场时重置运行态，避免旧市场数据残留到新市场。
       set((state) => ({
         marketId,
         bids: new Map<number, number>(),
@@ -141,30 +181,42 @@ export const useMarketStore = create<MarketStoreState>()(
         error: null
       })),
     hydrateSnapshot: (snapshot) =>
-      set((state) => ({
-        marketId: snapshot.marketId,
-        bids: buildSideMap(snapshot.bids),
-        asks: buildSideMap(snapshot.asks),
-        trades: snapshot.trades.slice(0, MAX_RECENT_TRADES),
-        lastSeq: snapshot.seq,
-        bookVersion: state.bookVersion + 1,
-        tradeVersion: state.tradeVersion + 1,
-        gap: null,
-        error: null
-      })),
+      // snapshot 是“强一致基线”：直接覆盖 book/trades/seq。
+      set((state) => {
+        const nextBids = buildSideMap(snapshot.bids);
+        const nextAsks = buildSideMap(snapshot.asks);
+        trimBookSide(nextBids, "bids");
+        trimBookSide(nextAsks, "asks");
+
+        return {
+          marketId: snapshot.marketId,
+          bids: nextBids,
+          asks: nextAsks,
+          trades: snapshot.trades.slice(0, MAX_RECENT_TRADES),
+          lastSeq: snapshot.seq ?? 0,
+          bookVersion: state.bookVersion + 1,
+          tradeVersion: state.tradeVersion + 1,
+          gap: null,
+          error: null
+        };
+      }),
     applyFrame: (frame) =>
       set((state) => {
+        // 一次处理一个动画帧批次，减少 store 更新频率。
         let bookChanged = false;
 
         for (const delta of frame.deltas) {
           bookChanged = applyLevels(state.bids, delta.bids) || bookChanged;
           bookChanged = applyLevels(state.asks, delta.asks) || bookChanged;
         }
+        bookChanged = trimBookSide(state.bids, "bids") || bookChanged;
+        bookChanged = trimBookSide(state.asks, "asks") || bookChanged;
 
         const nextTrades = mergeTrades(state.trades, frame.trades);
         const tradeChanged = nextTrades !== state.trades;
 
         return {
+          // frame.lastSeq 来自 provider 的连续 seq 校验通过结果。
           lastSeq: frame.lastSeq,
           bookVersion: bookChanged ? state.bookVersion + 1 : state.bookVersion,
           trades: nextTrades,
@@ -175,6 +227,7 @@ export const useMarketStore = create<MarketStoreState>()(
       }),
     setConnectionState: (connectionState, reconnectAttempt = 0, error = null) =>
       set((state) => {
+        // 无变化直接返回旧 state，避免无意义订阅通知。
         if (
           state.connectionState === connectionState &&
           state.reconnectAttempt === reconnectAttempt &&
@@ -204,6 +257,7 @@ export const useMarketStore = create<MarketStoreState>()(
       }),
     markGap: (gap) =>
       set((state) => {
+        // gap 期间强制切到 gap-detected，并暴露错误信息给 UI。
         if (
           state.connectionState === "gap-detected" &&
           state.error === "Sequence gap detected" &&
@@ -242,70 +296,3 @@ export const useMarketStore = create<MarketStoreState>()(
       })
   }))
 );
-
-export function useTopLevels(side: "bids" | "asks", limit = 12): Array<{
-  price: number;
-  size: number;
-  total: number;
-}> {
-  const levels = useBookLevels(side);
-
-  return useMemo(() => levels.slice(0, limit), [levels, limit]);
-}
-
-export function useBookLevels(side: "bids" | "asks"): Array<{
-  price: number;
-  size: number;
-  total: number;
-}> {
-  const bookVersion = useMarketStore((state) => state.bookVersion);
-  const source = useMarketStore((state) => (side === "bids" ? state.bids : state.asks));
-
-  return useMemo(() => {
-    void bookVersion;
-
-    const sorted = Array.from(source.entries(), ([price, size]) => ({ price, size })).sort(
-      (left, right) => (side === "bids" ? right.price - left.price : left.price - right.price)
-    );
-
-    let runningTotal = 0;
-
-    return sorted.map((level) => {
-      runningTotal += level.size;
-
-      return {
-        ...level,
-        total: runningTotal
-      };
-    });
-  }, [bookVersion, side, source]);
-}
-
-export function useRecentTrades(limit = 24): TradeRecord[] {
-  const tradeVersion = useMarketStore((state) => state.tradeVersion);
-  const trades = useMarketStore((state) => state.trades);
-
-  return useMemo(() => {
-    void tradeVersion;
-    return trades.slice(0, limit);
-  }, [limit, tradeVersion, trades]);
-}
-
-export function useMidPrice(): number | null {
-  const bookVersion = useMarketStore((state) => state.bookVersion);
-  const bids = useMarketStore((state) => state.bids);
-  const asks = useMarketStore((state) => state.asks);
-
-  return useMemo(() => {
-    void bookVersion;
-
-    const bestBid = Math.max(...bids.keys());
-    const bestAsk = Math.min(...asks.keys());
-
-    if (!Number.isFinite(bestBid) || !Number.isFinite(bestAsk)) {
-      return null;
-    }
-
-    return (bestBid + bestAsk) / 2;
-  }, [asks, bids, bookVersion]);
-}

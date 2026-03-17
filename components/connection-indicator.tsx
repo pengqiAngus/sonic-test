@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import { formatDistanceToNowStrict } from "date-fns";
 
 import { Panel } from "@/components/panel";
+import { CONNECTION_STATE_LABEL, CONNECTION_STATE_TONE_CLASS } from "@/lib/const";
+import type { ConnectionState } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { useMarketStore } from "@/store/market-store";
 
@@ -15,35 +17,17 @@ interface IndicatorLayout {
   isMinimized: boolean;
 }
 
-function formatStatus(status: string): string {
-  switch (status) {
-    case "open":
-      return "Connected";
-    case "connecting":
-      return "Connecting";
-    case "reconnecting":
-      return "Reconnecting";
-    case "gap-detected":
-      return "Gap Detected";
-    default:
-      return "Idle";
-  }
+function formatStatus(status: ConnectionState): string {
+  return CONNECTION_STATE_LABEL[status];
 }
 
-function statusTone(status: string): string {
-  switch (status) {
-    case "open":
-      return "bg-emerald-500";
-    case "gap-detected":
-      return "bg-amber-500";
-    case "reconnecting":
-      return "bg-orange-500";
-    default:
-      return "bg-slate-400";
-  }
+// 根据状态给指示灯配色，便于快速识别连接健康度。
+function statusTone(status: ConnectionState): string {
+  return CONNECTION_STATE_TONE_CLASS[status];
 }
 
 export function ConnectionIndicator(): React.ReactElement {
+  const marketId = useMarketStore((state) => state.marketId);
   const connectionState = useMarketStore((state) => state.connectionState);
   const reconnectAttempt = useMarketStore((state) => state.reconnectAttempt);
   const lastSeq = useMarketStore((state) => state.lastSeq);
@@ -54,9 +38,11 @@ export function ConnectionIndicator(): React.ReactElement {
   const [isMinimized, setIsMinimized] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [position, setPosition] = useState({ x: 16, y: 96 });
+  const [hasRestoredLayout, setHasRestoredLayout] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<{ pointerId: number; offsetX: number; offsetY: number } | null>(null);
-  const readyToPersistRef = useRef(false);
+  const livePositionRef = useRef(position);
+  const dragFrameRef = useRef<number | null>(null);
 
   const clampPosition = (x: number, y: number): { x: number; y: number } => {
     if (typeof window === "undefined" || !containerRef.current) {
@@ -76,12 +62,17 @@ export function ConnectionIndicator(): React.ReactElement {
   };
 
   useEffect(() => {
+    livePositionRef.current = position;
+  }, [position]);
+
+  useEffect(() => {
     if (typeof window === "undefined" || !containerRef.current) {
       return;
     }
 
     let restored = false;
 
+    // 恢复上次拖拽位置与折叠状态。
     try {
       const raw = window.localStorage.getItem(STORAGE_KEY);
       if (raw) {
@@ -106,7 +97,7 @@ export function ConnectionIndicator(): React.ReactElement {
       setPosition({ x: initialX, y: 96 });
     }
 
-    readyToPersistRef.current = true;
+    setHasRestoredLayout(true);
   }, []);
 
   useEffect(() => {
@@ -129,7 +120,7 @@ export function ConnectionIndicator(): React.ReactElement {
   }, [isMinimized]);
 
   useEffect(() => {
-    if (typeof window === "undefined" || !readyToPersistRef.current) {
+    if (typeof window === "undefined" || !hasRestoredLayout) {
       return;
     }
 
@@ -144,7 +135,7 @@ export function ConnectionIndicator(): React.ReactElement {
     } catch {
       // Ignore storage failures (e.g. private mode quotas).
     }
-  }, [position, isMinimized]);
+  }, [position, isMinimized, hasRestoredLayout]);
 
   const onDragStart = (event: React.PointerEvent<HTMLDivElement>): void => {
     if (event.button !== 0 || !containerRef.current) {
@@ -161,6 +152,17 @@ export function ConnectionIndicator(): React.ReactElement {
     setIsDragging(true);
   };
 
+  const applyLiveTransform = (): void => {
+    dragFrameRef.current = null;
+
+    if (!containerRef.current) {
+      return;
+    }
+
+    const next = livePositionRef.current;
+    containerRef.current.style.transform = `translate3d(${next.x}px, ${next.y}px, 0)`;
+  };
+
   const onDragMove = (event: React.PointerEvent<HTMLDivElement>): void => {
     if (!dragRef.current || dragRef.current.pointerId !== event.pointerId) {
       return;
@@ -168,7 +170,11 @@ export function ConnectionIndicator(): React.ReactElement {
 
     const nextX = event.clientX - dragRef.current.offsetX;
     const nextY = event.clientY - dragRef.current.offsetY;
-    setPosition(clampPosition(nextX, nextY));
+    livePositionRef.current = clampPosition(nextX, nextY);
+
+    if (dragFrameRef.current === null) {
+      dragFrameRef.current = window.requestAnimationFrame(applyLiveTransform);
+    }
   };
 
   const onDragEnd = (event: React.PointerEvent<HTMLDivElement>): void => {
@@ -178,8 +184,17 @@ export function ConnectionIndicator(): React.ReactElement {
 
     dragRef.current = null;
     setIsDragging(false);
+    setPosition(livePositionRef.current);
     event.currentTarget.releasePointerCapture(event.pointerId);
   };
+
+  useEffect(() => {
+    return () => {
+      if (dragFrameRef.current !== null) {
+        window.cancelAnimationFrame(dragFrameRef.current);
+      }
+    };
+  }, []);
 
   return (
     <div
@@ -225,6 +240,11 @@ export function ConnectionIndicator(): React.ReactElement {
           eyebrow="Transport"
           title="Connection Health"
           description="XState 管理连接生命周期，Zustand 只消费稳定帧。"
+          action={
+            <span className="w-[120px] text-center rounded-full border border-slate-200 bg-white/80 px-3 py-1 text-xs font-semibold text-slate-700">
+              {marketId}
+            </span>
+          }
         >
           <div className="grid gap-4">
             <div className="rounded-3xl border border-slate-200 bg-white/80 p-4">

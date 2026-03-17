@@ -10,10 +10,10 @@ import { z } from "zod";
 
 import { Panel } from "@/components/panel";
 import { submitOrder } from "@/lib/api";
+import { useMidPrice } from "@/lib/hooks";
 import { normalizePrice, normalizeSize } from "@/lib/number";
 import type { MarketId, OrderPayload } from "@/lib/types";
 import { cn } from "@/lib/utils";
-import { useMidPrice } from "@/store/market-store";
 
 const orderSchema = z.object({
   side: z.enum(["buy", "sell"]),
@@ -45,6 +45,7 @@ export function OrderPanel({ marketId }: { marketId: MarketId }): React.ReactEle
       return;
     }
 
+    // 首次进入时如果价格为空，用当前中间价作为默认参考。
     if (form.getValues("price") <= 0) {
       form.setValue("price", Number(midPrice.toFixed(2)));
     }
@@ -59,6 +60,7 @@ export function OrderPanel({ marketId }: { marketId: MarketId }): React.ReactEle
       size: normalizeSize(values.size)
     };
 
+    // 提交期间统一由 toast 展示 loading/success/error。
     await toast.promise(trigger(payload), {
       loading: `Submitting ${payload.side} order...`,
       success: (response) =>

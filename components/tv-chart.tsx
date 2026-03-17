@@ -3,7 +3,7 @@
 import { useDeferredValue, useEffect, useRef } from "react";
 
 import useSWR from "swr";
-import type { CandlestickData, IChartApi, ISeriesApi } from "lightweight-charts";
+import type { CandlestickData, IChartApi, ISeriesApi, Time } from "lightweight-charts";
 
 import { fetchCandles } from "@/lib/api";
 import type { Candle, CandleInterval, MarketId, TradeRecord } from "@/lib/types";
@@ -15,7 +15,9 @@ const INTERVAL_SECONDS: Record<CandleInterval, number> = {
   "5m": 300,
   "15m": 900
 };
+const UTC_PLUS_8_OFFSET_SECONDS = 8 * 60 * 60;
 
+// 转换为 lightweight-charts 需要的蜡烛格式。
 function toChartCandle(candle: Candle): CandlestickData {
   return {
     time: candle.time as CandlestickData["time"],
@@ -26,6 +28,7 @@ function toChartCandle(candle: Candle): CandlestickData {
   };
 }
 
+// 用最新成交实时推进当前 K 线（或开启新 K 线）。
 function mergeTradeIntoCandle(
   trade: TradeRecord,
   previous: Candle | null,
@@ -53,6 +56,40 @@ function mergeTradeIntoCandle(
     volume: previous.volume + trade.size,
     trades: previous.trades + 1
   };
+}
+
+function readUnixSecondsFromChartTime(value: unknown): number | null {
+  if (typeof value === "number") {
+    return value;
+  }
+
+  if (
+    typeof value === "object" &&
+    value !== null &&
+    "year" in value &&
+    "month" in value &&
+    "day" in value
+  ) {
+    const year = Number((value as { year: number }).year);
+    const month = Number((value as { month: number }).month);
+    const day = Number((value as { day: number }).day);
+    return Math.floor(Date.UTC(year, month - 1, day) / 1_000);
+  }
+
+  return null;
+}
+
+function formatInUtcPlus8(unixSeconds: number, includeSeconds: boolean): string {
+  const shifted = new Date((unixSeconds + UTC_PLUS_8_OFFSET_SECONDS) * 1_000);
+  const hh = String(shifted.getUTCHours()).padStart(2, "0");
+  const mm = String(shifted.getUTCMinutes()).padStart(2, "0");
+
+  if (includeSeconds) {
+    const ss = String(shifted.getUTCSeconds()).padStart(2, "0");
+    return `${hh}:${mm}:${ss}`;
+  }
+
+  return `${hh}:${mm}`;
 }
 
 export function TVChart({
@@ -87,6 +124,7 @@ export function TVChart({
     let cleanup = () => undefined;
     let cancelled = false;
 
+    // 延迟加载图表库，避免首屏 bundle 过重。
     void import("lightweight-charts").then(({ CandlestickSeries, ColorType, createChart }) => {
       if (cancelled || !containerRef.current) {
         return;
@@ -94,6 +132,16 @@ export function TVChart({
 
       const chart = createChart(containerRef.current, {
         autoSize: true,
+        localization: {
+          // lightweight-charts 默认按 UTC 显示，这里强制映射到 UTC+8。
+          timeFormatter: (time: Time) => {
+            const unixSeconds = readUnixSecondsFromChartTime(time);
+            if (unixSeconds === null) {
+              return "";
+            }
+            return formatInUtcPlus8(unixSeconds, interval === "1s");
+          }
+        },
         layout: {
           background: {
             color: "transparent",
@@ -115,7 +163,14 @@ export function TVChart({
         timeScale: {
           borderVisible: false,
           timeVisible: true,
-          secondsVisible: interval === "1s"
+          secondsVisible: interval === "1s",
+          tickMarkFormatter: (time: Time) => {
+            const unixSeconds = readUnixSecondsFromChartTime(time);
+            if (unixSeconds === null) {
+              return "";
+            }
+            return formatInUtcPlus8(unixSeconds, interval === "1s");
+          }
         },
         crosshair: {
           vertLine: {
@@ -178,6 +233,7 @@ export function TVChart({
       return;
     }
 
+    // 历史 setData + 实时 update 的组合方式可减少重绘成本。
     const nextCandle = mergeTradeIntoCandle(deferredTrade, latestCandleRef.current, interval);
 
     latestCandleRef.current = nextCandle;
@@ -191,7 +247,7 @@ export function TVChart({
         <div>
           <p className="text-xs uppercase tracking-[0.22em] text-slate-500">TradingView</p>
           <p className="text-sm font-medium text-slate-800">
-            {marketId} · {interval}
+            {marketId} · {interval} · UTC+8
           </p>
         </div>
         <div className="text-sm text-slate-500">

@@ -1,10 +1,6 @@
 import { Providers } from "@/components/providers";
 
 import "./globals.css";
-import { Geist } from "next/font/google";
-import { cn } from "@/lib/utils";
-
-const geist = Geist({subsets:['latin'],variable:'--font-sans'});
 
 export const metadata = {
   title: "Sonic Perps UI",
@@ -17,7 +13,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>): React.ReactElement {
   return (
-    <html lang="zh-CN" className={cn("font-sans", geist.variable)}>
+    <html lang="zh-CN">
       <body>
         <Providers>{children}</Providers>
       </body>

@@ -5,12 +5,14 @@ import { memo, useDeferredValue, useRef } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 
 import { Panel } from "@/components/panel";
+import { useBookLevels, useMidPrice } from "@/lib/hooks";
+import type { MarketId } from "@/lib/types";
 import { cn } from "@/lib/utils";
-import { useBookLevels, useMidPrice } from "@/store/market-store";
 
 const ROW_HEIGHT = 30;
 
-export function OrderbookPanel(): React.ReactElement {
+// 深度面板：读取 store 中已排序的 bids/asks，并做虚拟化渲染。
+export function OrderbookPanel({ marketId }: { marketId: MarketId }): React.ReactElement {
   const bids = useDeferredValue(useBookLevels("bids"));
   const asks = useDeferredValue(useBookLevels("asks"));
   const midPrice = useMidPrice();
@@ -21,6 +23,11 @@ export function OrderbookPanel(): React.ReactElement {
       title="Virtualized Orderbook"
       description="Map 存储 + RAF 批量提交后，列表只在动画帧重绘。"
       className="noise-grid"
+      action={
+        <span className="rounded-full border border-slate-200 bg-white/80 px-3 py-1 text-xs font-semibold text-slate-700">
+          {marketId}
+        </span>
+      }
     >
       <div className="mb-4 grid gap-3 rounded-[24px] border border-slate-200 bg-white/80 p-4 sm:grid-cols-3">
         <SummaryChip label="Best bid" value={bids[0] ? bids[0].price.toFixed(2) : "--"} tone="bid" />
@@ -74,10 +81,12 @@ function BookSide({
   levels: Array<{ price: number; size: number; total: number }>;
 }): React.ReactElement {
   const parentRef = useRef<HTMLDivElement>(null);
+  // 只渲染可视区域行，避免全量列表重排。
   const rowVirtualizer = useVirtualizer({
     count: levels.length,
     getScrollElement: () => parentRef.current,
     estimateSize: () => ROW_HEIGHT,
+    getItemKey: (index) => levels[index]?.price ?? `${side}-${index}`,
     overscan: 14
   });
 
@@ -93,7 +102,6 @@ function BookSide({
       <div
         ref={parentRef}
         className="h-[360px] overflow-auto"
-        style={{ contentVisibility: "auto", containIntrinsicSize: "360px" }}
       >
         <div
           className="relative"

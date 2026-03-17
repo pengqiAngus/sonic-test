@@ -5,6 +5,7 @@ import {
   type CandleResponse,
   REST_API_URL,
   WS_API_URL,
+  WS_SOLANA_STREAM_URL,
   type MarketId,
   type MarketSnapshot,
   type OrderPayload,
@@ -13,6 +14,10 @@ import {
   type TradeRecord
 } from "@/lib/types";
 
+// API 层职责：
+// 1) 请求后端接口
+// 2) 将不稳定响应格式归一为前端统一结构
+// 3) 在入口处完成价格/数量精度标准化
 interface SnapshotPayload {
   seq?: number;
   lastSeq?: number;
@@ -24,6 +29,11 @@ interface SnapshotPayload {
     bids?: PriceLevel[];
     asks?: PriceLevel[];
   };
+}
+
+function readSnapshotSeq(payload: SnapshotPayload): number | null {
+  const raw = payload.seq ?? payload.lastSeq;
+  return typeof raw === "number" && Number.isFinite(raw) ? raw : null;
 }
 
 interface CandlePayload {
@@ -39,6 +49,7 @@ function normalizeLevel(level: PriceLevel): PriceLevel {
   };
 }
 
+// 兼容后端字段缺省，确保 UI 层永远拿到完整 TradeRecord。
 function normalizeTrade(marketId: MarketId, trade: Partial<TradeRecord>): TradeRecord {
   return {
     marketId,
@@ -62,6 +73,7 @@ export async function fetchJSON<T>(url: string): Promise<T> {
   return (await response.json()) as T;
 }
 
+// 拉取快照作为本地订单簿初始化基线。
 export async function fetchSnapshot(marketId: MarketId): Promise<MarketSnapshot> {
   const payload = await fetchJSON<SnapshotPayload>(
     `${REST_API_URL}/markets/${marketId}/snapshot`
@@ -73,7 +85,7 @@ export async function fetchSnapshot(marketId: MarketId): Promise<MarketSnapshot>
 
   return {
     marketId,
-    seq: Number(payload.seq ?? payload.lastSeq ?? 0),
+    seq: readSnapshotSeq(payload),
     bids: bids.map(normalizeLevel),
     asks: asks.map(normalizeLevel),
     trades: trades.map((trade) => normalizeTrade(marketId, trade)),
@@ -81,6 +93,7 @@ export async function fetchSnapshot(marketId: MarketId): Promise<MarketSnapshot>
   };
 }
 
+// 拉取历史 K 线，供图表先渲染历史再叠加实时 trade。
 export async function fetchCandles(
   marketId: MarketId,
   interval: CandleInterval,
@@ -105,6 +118,7 @@ export async function fetchCandles(
   };
 }
 
+// 模拟下单接口：仅封装请求与错误信息，不做业务决策。
 export async function submitOrder(payload: OrderPayload): Promise<OrderResponse> {
   const response = await fetch(`${REST_API_URL}/orders`, {
     method: "POST",
@@ -122,8 +136,25 @@ export async function submitOrder(payload: OrderPayload): Promise<OrderResponse>
   return (await response.json()) as OrderResponse;
 }
 
+// 统一生成带 marketId 参数的 WS 地址。
 export function getMarketWebSocketUrl(marketId: MarketId): string {
   const url = new URL(WS_API_URL);
   url.searchParams.set("marketId", marketId);
+  return url.toString();
+}
+
+export function getSolanaStreamWebSocketUrl(filters?: {
+  programs?: string[];
+  accounts?: string[];
+}): string {
+  const url = new URL(WS_SOLANA_STREAM_URL);
+
+  if (filters?.programs && filters.programs.length > 0) {
+    url.searchParams.set("programs", filters.programs.join(","));
+  }
+  if (filters?.accounts && filters.accounts.length > 0) {
+    url.searchParams.set("accounts", filters.accounts.join(","));
+  }
+
   return url.toString();
 }

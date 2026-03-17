@@ -6,18 +6,21 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { format } from "date-fns";
 
 import { Panel } from "@/components/panel";
+import { useRecentTrades } from "@/lib/hooks";
+import type { MarketId } from "@/lib/types";
 import { cn } from "@/lib/utils";
-import { useRecentTrades } from "@/store/market-store";
 
 const ROW_HEIGHT = 32;
 
-export function TradeTape(): React.ReactElement {
+// 成交明细：只展示最近 N 条，并通过虚拟列表降低滚动开销。
+export function TradeTape({ marketId }: { marketId: MarketId }): React.ReactElement {
   const trades = useDeferredValue(useRecentTrades(120));
   const parentRef = useRef<HTMLDivElement>(null);
   const rowVirtualizer = useVirtualizer({
     count: trades.length,
     getScrollElement: () => parentRef.current,
     estimateSize: () => ROW_HEIGHT,
+    getItemKey: (index) => trades[index]?.tradeId ?? index,
     overscan: 16
   });
 
@@ -26,6 +29,11 @@ export function TradeTape(): React.ReactElement {
       eyebrow="Tape"
       title="Trade Stream"
       description="Recent trades 通过虚拟化列表渲染，避免高频 append 导致整列重排。"
+      action={
+        <span className="rounded-full border border-slate-200 bg-white/80 px-3 py-1 text-xs font-semibold text-slate-700">
+          {marketId}
+        </span>
+      }
     >
       <div className="overflow-hidden rounded-[24px] border border-slate-200 bg-white/80">
         <div className="grid grid-cols-[1.1fr_0.9fr_0.8fr] border-b border-slate-200 px-4 py-3 text-xs uppercase tracking-[0.2em] text-slate-500">
@@ -36,7 +44,6 @@ export function TradeTape(): React.ReactElement {
         <div
           ref={parentRef}
           className="h-[360px] overflow-auto"
-          style={{ contentVisibility: "auto", containIntrinsicSize: "360px" }}
         >
           <div
             className="relative"
