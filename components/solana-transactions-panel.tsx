@@ -82,6 +82,7 @@ export function SolanaTransactionsPanel({ marketId }: { marketId: MarketId }): R
                 return (
                   <div
                     ref={rowVirtualizer.measureElement}
+                    data-index={item.index}
                     key={tx.signature}
                     className="absolute left-0 top-0 grid h-[56px] w-full grid-cols-[1.8fr_0.7fr_0.8fr_1.5fr] items-center border-b border-slate-100 px-4 text-sm"
                     style={{
