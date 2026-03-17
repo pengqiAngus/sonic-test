@@ -1,15 +1,15 @@
-import { useContext, useMemo } from "react";
+import { useMemo } from "react";
 
-import {
-  SolanaStreamContext,
-  type SolanaStreamContextValue
-} from "@/components/solana-stream-provider";
 import type { TradeRecord } from "@/lib/types";
 import { useMarketStore } from "@/store/market-store";
+import { useSolanaStreamStore, type SolanaStreamStoreState } from "@/store/solana-stream-store";
 
 // 行情读取 hooks 统一放在 lib，避免与 store 写入逻辑耦合在同一文件。
 
-export function useTopLevels(side: "bids" | "asks", limit = 12): Array<{
+export function useTopLevels(
+  side: "bids" | "asks",
+  limit = 12
+): Array<{
   price: number;
   size: number;
   total: number;
@@ -75,10 +75,31 @@ export function useMidPrice(): number | null {
   }, [asks, bids, bookVersion]);
 }
 
-export function useSolanaStream(): SolanaStreamContextValue {
-  const context = useContext(SolanaStreamContext);
-  if (!context) {
-    throw new Error("useSolanaStream must be used within SolanaStreamProvider");
-  }
-  return context;
+export function useSolanaStream(): Pick<
+  SolanaStreamStoreState,
+  | "status"
+  | "statusReason"
+  | "reconnectAttempt"
+  | "transactions"
+  | "lastReorgAt"
+  | "lastRollbackSlot"
+  | "activeFilters"
+> {
+  const status = useSolanaStreamStore((state) => state.status);
+  const statusReason = useSolanaStreamStore((state) => state.statusReason);
+  const reconnectAttempt = useSolanaStreamStore((state) => state.reconnectAttempt);
+  const transactions = useSolanaStreamStore((state) => state.transactions);
+  const lastReorgAt = useSolanaStreamStore((state) => state.lastReorgAt);
+  const lastRollbackSlot = useSolanaStreamStore((state) => state.lastRollbackSlot);
+  const activeFilters = useSolanaStreamStore((state) => state.activeFilters);
+
+  return {
+    status,
+    statusReason,
+    reconnectAttempt,
+    transactions,
+    lastReorgAt,
+    lastRollbackSlot,
+    activeFilters
+  };
 }

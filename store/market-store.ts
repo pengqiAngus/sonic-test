@@ -21,8 +21,8 @@ import type {
 // ---------------------------------------------------------------------
 
 const DEFAULT_MARKET: MarketId = "BTC-PERP";
-const MAX_RECENT_TRADES = 120;
-const MAX_BOOK_LEVELS_PER_SIDE = 500;
+const MAX_RECENT_TRADES = 1000;
+const MAX_BOOK_LEVELS_PER_SIDE = 1000;
 
 // 每个动画帧内聚合的增量数据：
 // WebSocket 高频消息先写入 frame，再批量提交到 store。

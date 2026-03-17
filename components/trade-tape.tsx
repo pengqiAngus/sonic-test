@@ -14,7 +14,7 @@ const ROW_HEIGHT = 32;
 
 // 成交明细：只展示最近 N 条，并通过虚拟列表降低滚动开销。
 export function TradeTape({ marketId }: { marketId: MarketId }): React.ReactElement {
-  const trades = useDeferredValue(useRecentTrades(120));
+  const trades = useDeferredValue(useRecentTrades(1000));
   const parentRef = useRef<HTMLDivElement>(null);
   const rowVirtualizer = useVirtualizer({
     count: trades.length,
@@ -41,10 +41,7 @@ export function TradeTape({ marketId }: { marketId: MarketId }): React.ReactElem
           <span className="text-right">Price</span>
           <span className="text-right">Size</span>
         </div>
-        <div
-          ref={parentRef}
-          className="h-[360px] overflow-auto"
-        >
+        <div ref={parentRef} className="h-[360px] overflow-auto">
           <div
             className="relative"
             style={{

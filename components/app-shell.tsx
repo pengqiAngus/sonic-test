@@ -91,31 +91,31 @@ export function AppShell(): React.ReactElement {
             </Panel>
             <OrderPanel marketId={marketId} />
           </div>
-          <Tabs defaultValue="orderbook" className="gap-4">
-            <TabsList variant="line" className="w-full justify-start rounded-2xl bg-white/80 p-2">
-              <TabsTrigger value="orderbook" className="px-4 py-2">
-                Orderbook
-              </TabsTrigger>
-              <TabsTrigger value="trades" className="px-4 py-2">
-                Trade Stream
-              </TabsTrigger>
-              <TabsTrigger value="transactions" className="px-4 py-2">
-                Solana Transactions
-              </TabsTrigger>
-            </TabsList>
-            {/* TabsContent 默认只挂载激活项，未激活面板不会继续渲染/订阅。 */}
-            <TabsContent value="orderbook">
-              <OrderbookPanel marketId={marketId} />
-            </TabsContent>
-            <TabsContent value="trades">
-              <TradeTape marketId={marketId} />
-            </TabsContent>
-            <TabsContent value="transactions">
-              <SolanaStreamProvider key={marketId}>
+          <SolanaStreamProvider key={marketId}>
+            <Tabs defaultValue="orderbook" className="gap-4">
+              <TabsList variant="line" className="w-full justify-start rounded-2xl bg-white/80 p-2">
+                <TabsTrigger value="orderbook" className="px-4 py-2">
+                  Orderbook
+                </TabsTrigger>
+                <TabsTrigger value="trades" className="px-4 py-2">
+                  Trade Stream
+                </TabsTrigger>
+                <TabsTrigger value="transactions" className="px-4 py-2">
+                  Solana Transactions
+                </TabsTrigger>
+              </TabsList>
+              {/* TabsContent 默认按需挂载；Solana Stream 已在上层常驻订阅并写入 store。 */}
+              <TabsContent value="orderbook">
+                <OrderbookPanel marketId={marketId} />
+              </TabsContent>
+              <TabsContent value="trades">
+                <TradeTape marketId={marketId} />
+              </TabsContent>
+              <TabsContent value="transactions">
                 <SolanaTransactionsPanel marketId={marketId} />
-              </SolanaStreamProvider>
-            </TabsContent>
-          </Tabs>
+              </TabsContent>
+            </Tabs>
+          </SolanaStreamProvider>
           <Panel
             eyebrow="Phase 4"
             title="Performance Audit Notes"

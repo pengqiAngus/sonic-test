@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef } from "react";
 
 import { useMachine } from "@xstate/react";
 
@@ -17,21 +17,8 @@ import type {
   SolanaStreamMessage,
   SolanaTransactionMessage
 } from "@/lib/types";
+import { useSolanaStreamStore } from "@/store/solana-stream-store";
 import { isObject, safeJsonParse } from "@/lib/utils";
-
-const MAX_RECENT_TRANSACTIONS = 300;
-
-export interface SolanaStreamContextValue {
-  status: SolanaStreamStatus;
-  statusReason: string | null;
-  reconnectAttempt: number;
-  transactions: SolanaTransactionMessage[];
-  lastReorgAt: number | null;
-  lastRollbackSlot: number | null;
-  activeFilters: { programs: string[]; accounts: string[] };
-}
-
-export const SolanaStreamContext = createContext<SolanaStreamContextValue | null>(null);
 
 function parseMessage(raw: string): SolanaStreamMessage | null {
   return safeJsonParse<SolanaStreamMessage>(raw);
@@ -77,16 +64,11 @@ function deriveStatus(value: string): SolanaStreamStatus {
   );
 }
 
-export function SolanaStreamProvider({ children }: { children: React.ReactNode }): React.ReactElement {
-  const [transactions, setTransactions] = useState<SolanaTransactionMessage[]>([]);
-  const [lastReorgAt, setLastReorgAt] = useState<number | null>(null);
-  const [lastRollbackSlot, setLastRollbackSlot] = useState<number | null>(null);
-  const [activeFilters, setActiveFilters] = useState<{ programs: string[]; accounts: string[] }>({
-    programs: [],
-    accounts: []
-  });
-  const [status, setStatus] = useState<SolanaStreamStatus>(SOLANA_STREAM_STATUS.CONNECTING);
-
+export function SolanaStreamProvider({
+  children
+}: {
+  children: React.ReactNode;
+}): React.ReactElement {
   const socketRef = useRef<WebSocket | null>(null);
   const pingIntervalRef = useRef<number | null>(null);
   const intentionalCloseRef = useRef(false);
@@ -110,10 +92,17 @@ export function SolanaStreamProvider({ children }: { children: React.ReactNode }
   }, []);
 
   useEffect(() => {
-    setStatus(deriveStatus(String(machineState.value)));
-  }, [machineState.value]);
+    useSolanaStreamStore
+      .getState()
+      .setMachineStatus(
+        deriveStatus(String(machineState.value)),
+        machineState.context.reason,
+        machineState.context.attempt
+      );
+  }, [machineState.context.attempt, machineState.context.reason, machineState.value]);
 
   useEffect(() => {
+    useSolanaStreamStore.getState().reset();
     send({ type: "CONNECT" });
 
     return () => {
@@ -155,7 +144,7 @@ export function SolanaStreamProvider({ children }: { children: React.ReactNode }
       }
 
       if (isStreamHelloMessage(message)) {
-        setActiveFilters({
+        useSolanaStreamStore.getState().setActiveFilters({
           programs: message.filters.programs,
           accounts: message.filters.accounts
         });
@@ -163,20 +152,12 @@ export function SolanaStreamProvider({ children }: { children: React.ReactNode }
       }
 
       if (isTransactionMessage(message)) {
-        setTransactions((prev) => {
-          const exists = prev.some((item) => item.signature === message.signature);
-          if (exists) {
-            return prev;
-          }
-          return [message, ...prev].slice(0, MAX_RECENT_TRANSACTIONS);
-        });
+        useSolanaStreamStore.getState().pushTransaction(message);
         return;
       }
 
       if (isReorgMessage(message)) {
-        setLastReorgAt(message.ts);
-        setLastRollbackSlot(message.rollbackSlot);
-        setTransactions((prev) => prev.filter((item) => item.slot <= message.rollbackSlot));
+        useSolanaStreamStore.getState().applyReorg(message.ts, message.rollbackSlot);
       }
     };
 
@@ -205,27 +186,5 @@ export function SolanaStreamProvider({ children }: { children: React.ReactNode }
     };
   }, [closeSocket, send, shouldMaintainSocket]);
 
-  const contextValue = useMemo<SolanaStreamContextValue>(
-    () => ({
-      status,
-      statusReason: machineState.context.reason,
-      reconnectAttempt: machineState.context.attempt,
-      transactions,
-      lastReorgAt,
-      lastRollbackSlot,
-      activeFilters
-    }),
-    [
-      activeFilters,
-      lastReorgAt,
-      lastRollbackSlot,
-      machineState.context.attempt,
-      machineState.context.reason,
-      status,
-      transactions
-    ]
-  );
-
-  return <SolanaStreamContext.Provider value={contextValue}>{children}</SolanaStreamContext.Provider>;
+  return <>{children}</>;
 }
-
