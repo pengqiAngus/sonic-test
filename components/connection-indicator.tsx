@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils";
 import { useMarketStore } from "@/store/market-store";
 
 const STORAGE_KEY = "sonic:connection-indicator:layout";
+const MOBILE_BREAKPOINT = 768;
 
 interface IndicatorLayout {
   x: number;
@@ -37,6 +38,8 @@ export function ConnectionIndicator(): React.ReactElement {
   const error = useMarketStore((state) => state.error);
   const [isMinimized, setIsMinimized] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+  const [isMobileViewport, setIsMobileViewport] = useState(false);
+  const [isViewportReady, setIsViewportReady] = useState(false);
   const [position, setPosition] = useState({ x: 16, y: 96 });
   const [hasRestoredLayout, setHasRestoredLayout] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -60,6 +63,29 @@ export function ConnectionIndicator(): React.ReactElement {
       y: Math.min(Math.max(margin, y), maxY)
     };
   };
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const mediaQuery = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT - 1}px)`);
+    const syncViewport = (matches: boolean): void => {
+      setIsMobileViewport(matches);
+    };
+
+    syncViewport(mediaQuery.matches);
+    setIsViewportReady(true);
+
+    const onChange = (event: MediaQueryListEvent): void => {
+      syncViewport(event.matches);
+    };
+
+    mediaQuery.addEventListener("change", onChange);
+    return () => {
+      mediaQuery.removeEventListener("change", onChange);
+    };
+  }, []);
 
   useEffect(() => {
     livePositionRef.current = position;
@@ -138,6 +164,10 @@ export function ConnectionIndicator(): React.ReactElement {
   }, [position, isMinimized, hasRestoredLayout]);
 
   const onDragStart = (event: React.PointerEvent<HTMLDivElement>): void => {
+    if (isMobileViewport) {
+      return;
+    }
+
     if (event.button !== 0 || !containerRef.current) {
       return;
     }
@@ -164,6 +194,10 @@ export function ConnectionIndicator(): React.ReactElement {
   };
 
   const onDragMove = (event: React.PointerEvent<HTMLDivElement>): void => {
+    if (isMobileViewport) {
+      return;
+    }
+
     if (!dragRef.current || dragRef.current.pointerId !== event.pointerId) {
       return;
     }
@@ -178,6 +212,10 @@ export function ConnectionIndicator(): React.ReactElement {
   };
 
   const onDragEnd = (event: React.PointerEvent<HTMLDivElement>): void => {
+    if (isMobileViewport) {
+      return;
+    }
+
     if (!dragRef.current || dragRef.current.pointerId !== event.pointerId) {
       return;
     }
@@ -200,14 +238,23 @@ export function ConnectionIndicator(): React.ReactElement {
     <div
       ref={containerRef}
       className={cn(
-        "fixed left-0 top-0 z-50 w-[min(360px,calc(100vw-1.5rem))] touch-none",
-        isMinimized ? "w-[min(260px,calc(100vw-1.5rem))]" : null
+        "fixed z-50",
+        !isViewportReady ? "pointer-events-none opacity-0" : null,
+        isMobileViewport
+          ? "inset-x-3 bottom-3 top-auto w-auto touch-auto"
+          : "left-0 top-0 w-[min(360px,calc(100vw-1.5rem))] touch-none",
+        isMinimized && !isMobileViewport ? "w-[min(360px,calc(100vw-1.5rem))]" : null
       )}
-      style={{ transform: `translate3d(${position.x}px, ${position.y}px, 0)` }}
+      style={
+        isMobileViewport
+          ? undefined
+          : { transform: `translate3d(${position.x}px, ${position.y}px, 0)` }
+      }
     >
       <div
         className={cn(
-          "mb-2 flex cursor-grab items-center justify-between rounded-full border border-slate-200/80 bg-white/90 px-3 py-2 shadow-sm backdrop-blur active:cursor-grabbing",
+          "mb-2 flex items-center justify-between rounded-full border border-slate-200/80 bg-white/90 px-3 py-2 shadow-sm backdrop-blur",
+          isMobileViewport ? "cursor-default" : "cursor-grab active:cursor-grabbing",
           isDragging ? "ring-2 ring-indigo-300" : null
         )}
         onPointerDown={onDragStart}
@@ -218,7 +265,7 @@ export function ConnectionIndicator(): React.ReactElement {
         <div className="flex items-center gap-2">
           <span className={cn("h-2.5 w-2.5 rounded-full", statusTone(connectionState))} />
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-600">
-            Connection
+            Connection Indicator
           </p>
         </div>
         <button

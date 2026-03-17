@@ -20,8 +20,7 @@ export function OrderbookPanel({ marketId }: { marketId: MarketId }): React.Reac
   return (
     <Panel
       eyebrow="Depth"
-      title="Virtualized Orderbook"
-      description="Map 存储 + RAF 批量提交后，列表只在动画帧重绘。"
+      title="Orderbook"
       className="noise-grid"
       action={
         <span className="rounded-full border border-slate-200 bg-white/80 px-3 py-1 text-xs font-semibold text-slate-700">
@@ -30,13 +29,17 @@ export function OrderbookPanel({ marketId }: { marketId: MarketId }): React.Reac
       }
     >
       <div className="mb-4 grid gap-3 rounded-[24px] border border-slate-200 bg-white/80 p-4 sm:grid-cols-3">
-        <SummaryChip label="Best bid" value={bids[0] ? bids[0].price.toFixed(2) : "--"} tone="bid" />
         <SummaryChip
-          label="Mid"
-          value={midPrice ? midPrice.toFixed(2) : "--"}
-          tone="neutral"
+          label="Best bid"
+          value={bids[0] ? bids[0].price.toFixed(2) : "--"}
+          tone="bid"
         />
-        <SummaryChip label="Best ask" value={asks[0] ? asks[0].price.toFixed(2) : "--"} tone="ask" />
+        <SummaryChip label="Mid" value={midPrice ? midPrice.toFixed(2) : "--"} tone="neutral" />
+        <SummaryChip
+          label="Best ask"
+          value={asks[0] ? asks[0].price.toFixed(2) : "--"}
+          tone="ask"
+        />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
@@ -99,10 +102,7 @@ function BookSide({
         <span className="text-right">Size</span>
         <span className="text-right">Total</span>
       </div>
-      <div
-        ref={parentRef}
-        className="h-[360px] overflow-auto"
-      >
+      <div ref={parentRef} className="h-[360px] overflow-auto">
         <div
           className="relative"
           style={{

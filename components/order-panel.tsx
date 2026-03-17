@@ -8,6 +8,7 @@ import useSWRMutation from "swr/mutation";
 import { toast } from "sonner";
 import { z } from "zod";
 
+import { Button } from "@/components/ui/button";
 import { Panel } from "@/components/panel";
 import { submitOrder } from "@/lib/api";
 import { useMidPrice } from "@/lib/hooks";
@@ -140,13 +141,13 @@ export function OrderPanel({ marketId }: { marketId: MarketId }): React.ReactEle
           }
         />
 
-        <button
+        <Button
           type="submit"
           disabled={isMutating}
-          className="h-12 rounded-2xl bg-slate-900 px-4 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-500"
+          className="cursor-pointer h-12 rounded-2xl bg-slate-900 px-4 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-500"
         >
           {isMutating ? "Submitting..." : "Submit Limit Order"}
-        </button>
+        </Button>
       </form>
     </Panel>
   );
@@ -165,9 +166,9 @@ function Field({
 }): React.ReactElement {
   return (
     <label className="grid gap-2">
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
         <span className="text-sm font-medium text-slate-700">{label}</span>
-        <span className="text-xs text-slate-500">{error ?? hint}</span>
+        <span className="break-all text-xs text-slate-500 sm:text-right">{error ?? hint}</span>
       </div>
       {input}
     </label>

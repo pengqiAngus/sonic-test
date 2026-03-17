@@ -34,7 +34,8 @@ function mergeTradeIntoCandle(
   previous: Candle | null,
   interval: CandleInterval
 ): Candle {
-  const bucket = Math.floor(trade.ts / 1_000 / INTERVAL_SECONDS[interval]) * INTERVAL_SECONDS[interval];
+  const bucket =
+    Math.floor(trade.ts / 1_000 / INTERVAL_SECONDS[interval]) * INTERVAL_SECONDS[interval];
 
   if (!previous || bucket > previous.time) {
     return {
@@ -243,18 +244,18 @@ export function TVChart({
 
   return (
     <div className="overflow-hidden rounded-[24px] border border-slate-200 bg-white/75">
-      <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
-        <div>
+      <div className="flex flex-col gap-2 border-b border-slate-200 px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-4">
+        <div className="min-w-0">
           <p className="text-xs uppercase tracking-[0.22em] text-slate-500">TradingView</p>
-          <p className="text-sm font-medium text-slate-800">
+          <p className="truncate text-sm font-medium text-slate-800">
             {marketId} · {interval} · UTC+8
           </p>
         </div>
-        <div className="text-sm text-slate-500">
+        <div className="text-xs text-slate-500 sm:text-sm">
           {error ? "candles unavailable" : isLoading ? "loading history" : "live"}
         </div>
       </div>
-      <div ref={containerRef} className="h-[360px] w-full" />
+      <div ref={containerRef} className="h-[280px] w-full sm:h-[360px]" />
     </div>
   );
 }

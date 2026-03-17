@@ -34,13 +34,11 @@ export function SolanaTransactionsPanel({ marketId }: { marketId: MarketId }): R
       title="Recent Transactions (Solana Stream)"
       description="连接 /ws/stream，展示 signature / slot / fee / program IDs，并在 reorg 时回滚本地列表。"
       action={
-        <div className="flex items-center gap-2">
+        <div className="flex md:flex-row flex-col items-center gap-2 ">
           <span className="rounded-full border border-slate-200 bg-white/80 px-3 py-1 text-xs font-semibold text-slate-700">
             {marketId}
           </span>
-          <span className={SOLANA_STREAM_STATUS_BADGE_CLASS[status]}>
-            {statusText}
-          </span>
+          <span className={SOLANA_STREAM_STATUS_BADGE_CLASS[status]}>{statusText}</span>
         </div>
       }
     >
@@ -94,7 +92,9 @@ export function SolanaTransactionsPanel({ marketId }: { marketId: MarketId }): R
                       <TooltipProvider>
                         <Tooltip>
                           <TooltipTrigger asChild>
-                            <span className="truncate font-medium text-slate-800">{tx.signature}</span>
+                            <span className="truncate font-medium text-slate-800">
+                              {tx.signature}
+                            </span>
                           </TooltipTrigger>
                           <TooltipContent sideOffset={8}>{tx.signature}</TooltipContent>
                         </Tooltip>
