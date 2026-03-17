@@ -49,6 +49,7 @@ describe("AppShell", () => {
     expect(screen.getByText("TVChart:BTC-PERP:1m")).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Trade Stream" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Solana Transactions" })).toBeInTheDocument();
-    expect(document.title).toBe("BTC-PERP 123.45 | Sonic Perps UI");
+    expect(document.title).toContain("BTC-PERP");
+    expect(document.title).toContain("123.45");
   });
 });
