@@ -105,6 +105,7 @@ export function TVChart({
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const latestCandleRef = useRef<Candle | null>(null);
   const lastTradeIdRef = useRef<string | null>(null);
+  const latestHistoryRef = useRef<Candle[] | null>(null);
 
   const latestTrade = useMarketStore((state) => {
     const tradeVersion = state.tradeVersion;
@@ -194,6 +195,14 @@ export function TVChart({
       chartRef.current = chart;
       seriesRef.current = series;
 
+      // History may arrive before chart init; replay the latest history once series is ready.
+      if (latestHistoryRef.current) {
+        series.setData(latestHistoryRef.current.map(toChartCandle));
+        chart.timeScale().fitContent();
+        latestCandleRef.current = latestHistoryRef.current.at(-1) ?? null;
+        lastTradeIdRef.current = null;
+      }
+
       const observer = new ResizeObserver(() => {
         chart.timeScale().fitContent();
       });
@@ -215,6 +224,8 @@ export function TVChart({
   }, [interval, marketId]);
 
   useEffect(() => {
+    latestHistoryRef.current = data?.candles ?? null;
+
     if (!data || !seriesRef.current) {
       return;
     }
