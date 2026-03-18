@@ -1,5 +1,7 @@
 import { assign, setup } from "xstate";
 
+const MAX_RECONNECT_ATTEMPTS = 5;
+
 interface SolanaStreamMachineContext {
   attempt: number;
   reason: string | null;
@@ -19,6 +21,9 @@ export const solanaStreamMachine = setup({
   },
   delays: {
     retryDelay: ({ context }) => Math.min(1_000 * 2 ** Math.max(context.attempt - 1, 0), 10_000)
+  },
+  guards: {
+    canRetry: ({ context }) => context.attempt < MAX_RECONNECT_ATTEMPTS
   },
   actions: {
     bumpAttempt: assign({
@@ -95,11 +100,29 @@ export const solanaStreamMachine = setup({
     },
     reconnecting: {
       after: {
-        retryDelay: {
-          target: "connecting"
-        }
+        retryDelay: [
+          {
+            guard: "canRetry",
+            target: "connecting"
+          },
+          {
+            target: "closedConnection"
+          }
+        ]
       },
       on: {
+        DISCONNECT: {
+          target: "idle",
+          actions: "rememberReason"
+        }
+      }
+    },
+    closedConnection: {
+      on: {
+        CONNECT: {
+          target: "connecting",
+          actions: ["resetAttempt", "clearReason"]
+        },
         DISCONNECT: {
           target: "idle",
           actions: "rememberReason"

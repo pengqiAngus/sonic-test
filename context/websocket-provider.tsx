@@ -12,6 +12,9 @@ import { isObject, safeJsonParse } from "@/lib/utils";
 import { websocketMachine } from "@/lib/websocket-machine";
 import { useMarketStore, type BufferedFrame } from "@/store/market-store";
 
+const PING_INTERVAL_MS = 15_000;
+const PONG_TIMEOUT_MS = 10_000;
+
 // Create an empty frame used to buffer deltas within one animation frame.
 function createEmptyFrame(lastSeq = 0): BufferedFrame {
   return {
@@ -120,6 +123,7 @@ export function WebSocketProvider({
   const rafRef = useRef<number | null>(null);
   const flushTimeoutRef = useRef<number | null>(null);
   const pingIntervalRef = useRef<number | null>(null);
+  const pongTimeoutRef = useRef<number | null>(null);
   const rateIntervalRef = useRef<number | null>(null);
   const intentionalCloseRef = useRef(false);
   const seqRef = useRef(0);
@@ -197,6 +201,10 @@ export function WebSocketProvider({
         window.clearInterval(pingIntervalRef.current);
         pingIntervalRef.current = null;
       }
+      if (pongTimeoutRef.current !== null) {
+        window.clearTimeout(pongTimeoutRef.current);
+        pongTimeoutRef.current = null;
+      }
 
       const socket = socketRef.current;
 
@@ -232,6 +240,10 @@ export function WebSocketProvider({
     if (isPongMessage(rawMessage)) {
       // Heartbeat reply only updates last pong timestamp for health display.
       markPong(rawMessage.ts);
+      if (pongTimeoutRef.current !== null) {
+        window.clearTimeout(pongTimeoutRef.current);
+        pongTimeoutRef.current = null;
+      }
       return;
     }
 
@@ -405,6 +417,23 @@ export function WebSocketProvider({
     };
   }, [setMessageRates]);
 
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const onOnline = (): void => {
+      if (machineState.matches("closedConnection")) {
+        send({ type: "CONNECT" });
+      }
+    };
+
+    window.addEventListener("online", onOnline);
+    return () => {
+      window.removeEventListener("online", onOnline);
+    };
+  }, [machineState, send]);
+
   const shouldMaintainSocket =
     Boolean(snapshot) && (machineState.matches("connecting") || machineState.matches("open"));
 
@@ -430,8 +459,18 @@ export function WebSocketProvider({
       pingIntervalRef.current = window.setInterval(() => {
         if (socket.readyState === WebSocket.OPEN) {
           socket.send(JSON.stringify({ type: "ping" }));
+          if (pongTimeoutRef.current !== null) {
+            window.clearTimeout(pongTimeoutRef.current);
+          }
+          pongTimeoutRef.current = window.setTimeout(() => {
+            send({
+              type: "SOCKET_ERROR",
+              reason: "Heartbeat timeout"
+            });
+            closeSocket("heartbeat-timeout");
+          }, PONG_TIMEOUT_MS);
         }
-      }, 15_000);
+      }, PING_INTERVAL_MS);
 
       send({
         type: "SOCKET_OPEN"
@@ -460,6 +499,10 @@ export function WebSocketProvider({
       if (pingIntervalRef.current !== null) {
         window.clearInterval(pingIntervalRef.current);
         pingIntervalRef.current = null;
+      }
+      if (pongTimeoutRef.current !== null) {
+        window.clearTimeout(pongTimeoutRef.current);
+        pongTimeoutRef.current = null;
       }
 
       if (!intentionalCloseRef.current) {

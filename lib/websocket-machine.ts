@@ -2,6 +2,8 @@ import { assign, setup } from "xstate";
 
 import type { GapState } from "@/lib/types";
 
+const MAX_RECONNECT_ATTEMPTS = 5;
+
 interface WebSocketMachineContext {
   attempt: number;
   reason: string | null;
@@ -24,6 +26,9 @@ export const websocketMachine = setup({
   },
   delays: {
     retryDelay: ({ context }) => Math.min(1_000 * 2 ** Math.max(context.attempt - 1, 0), 15_000)
+  },
+  guards: {
+    canRetry: ({ context }) => context.attempt < MAX_RECONNECT_ATTEMPTS
   },
   actions: {
     bumpAttempt: assign({
@@ -132,11 +137,29 @@ export const websocketMachine = setup({
     // Reconnecting state after failure:
     reconnecting: {
       after: {
-        retryDelay: {
-          target: "connecting"
-        }
+        retryDelay: [
+          {
+            guard: "canRetry",
+            target: "connecting"
+          },
+          {
+            target: "closedConnection"
+          }
+        ]
       },
       on: {
+        DISCONNECT: {
+          target: "idle",
+          actions: "rememberDisconnect"
+        }
+      }
+    },
+    closedConnection: {
+      on: {
+        CONNECT: {
+          target: "connecting",
+          actions: ["resetAttempt", "clearGap"]
+        },
         DISCONNECT: {
           target: "idle",
           actions: "rememberDisconnect"

@@ -20,6 +20,9 @@ import type {
 import { useSolanaStreamStore } from "@/store/solana-stream-store";
 import { isObject, safeJsonParse } from "@/lib/utils";
 
+const PING_INTERVAL_MS = 20_000;
+const PONG_TIMEOUT_MS = 12_000;
+
 function parseMessage(raw: string): SolanaStreamMessage | null {
   return safeJsonParse<SolanaStreamMessage>(raw);
 }
@@ -66,6 +69,7 @@ export function SolanaStreamProvider({
 }): React.ReactElement {
   const socketRef = useRef<WebSocket | null>(null);
   const pingIntervalRef = useRef<number | null>(null);
+  const pongTimeoutRef = useRef<number | null>(null);
   const intentionalCloseRef = useRef(false);
 
   const [machineState, send] = useMachine(solanaStreamMachine);
@@ -74,6 +78,10 @@ export function SolanaStreamProvider({
     if (pingIntervalRef.current !== null) {
       window.clearInterval(pingIntervalRef.current);
       pingIntervalRef.current = null;
+    }
+    if (pongTimeoutRef.current !== null) {
+      window.clearTimeout(pongTimeoutRef.current);
+      pongTimeoutRef.current = null;
     }
 
     const socket = socketRef.current;
@@ -109,6 +117,23 @@ export function SolanaStreamProvider({
   const shouldMaintainSocket = machineState.matches("connecting") || machineState.matches("open");
 
   useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const onOnline = (): void => {
+      if (machineState.matches("closedConnection")) {
+        send({ type: "CONNECT" });
+      }
+    };
+
+    window.addEventListener("online", onOnline);
+    return () => {
+      window.removeEventListener("online", onOnline);
+    };
+  }, [machineState, send]);
+
+  useEffect(() => {
     if (!shouldMaintainSocket) {
       closeSocket("state-transition");
       return;
@@ -126,8 +151,15 @@ export function SolanaStreamProvider({
       pingIntervalRef.current = window.setInterval(() => {
         if (socket.readyState === WebSocket.OPEN) {
           socket.send(JSON.stringify({ type: "ping" }));
+          if (pongTimeoutRef.current !== null) {
+            window.clearTimeout(pongTimeoutRef.current);
+          }
+          pongTimeoutRef.current = window.setTimeout(() => {
+            send({ type: "SOCKET_ERROR", reason: "Heartbeat timeout" });
+            closeSocket("heartbeat-timeout");
+          }, PONG_TIMEOUT_MS);
         }
-      }, 20_000);
+      }, PING_INTERVAL_MS);
 
       send({ type: "SOCKET_OPEN" });
     };
@@ -139,6 +171,13 @@ export function SolanaStreamProvider({
       }
 
       if (isStreamHelloMessage(message)) {
+        return;
+      }
+      if (message.type === "pong") {
+        if (pongTimeoutRef.current !== null) {
+          window.clearTimeout(pongTimeoutRef.current);
+          pongTimeoutRef.current = null;
+        }
         return;
       }
 
@@ -161,6 +200,10 @@ export function SolanaStreamProvider({
       if (pingIntervalRef.current !== null) {
         window.clearInterval(pingIntervalRef.current);
         pingIntervalRef.current = null;
+      }
+      if (pongTimeoutRef.current !== null) {
+        window.clearTimeout(pongTimeoutRef.current);
+        pongTimeoutRef.current = null;
       }
 
       if (!intentionalCloseRef.current) {

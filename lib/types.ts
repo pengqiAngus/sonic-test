@@ -147,7 +147,13 @@ export type SolanaStreamMessage =
   | SolanaReorgMessage
   | PongMessage;
 
-export type ConnectionState = "idle" | "connecting" | "open" | "gap-detected" | "reconnecting";
+export type ConnectionState =
+  | "idle"
+  | "connecting"
+  | "open"
+  | "gap-detected"
+  | "reconnecting"
+  | "closed-connection";
 
 export interface MessageRates {
   bookPerSecond: number;
