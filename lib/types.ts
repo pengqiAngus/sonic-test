@@ -1,7 +1,7 @@
-// 全项目共享类型定义：
-// - API 地址常量
-// - 行情/订单领域模型
-// - WebSocket 消息协议
+// Shared type definitions across the project:
+// - API endpoint constants
+// - Market/order domain models
+// - WebSocket message protocol
 export const REST_API_URL =
   process.env.NEXT_PUBLIC_SMFS_REST_URL ?? "https://interviews-api.sonic.game";
 
@@ -12,7 +12,7 @@ export const WS_SOLANA_STREAM_URL =
 
 export const SUPPORTED_MARKETS = ["BTC-PERP", "SOL-PERP"] as const;
 
-// 仅允许受支持市场，避免字符串随意传递造成运行时问题。
+// Only allow supported markets to avoid runtime issues from arbitrary strings.
 export type MarketId = (typeof SUPPORTED_MARKETS)[number];
 export type TradeSide = "buy" | "sell";
 export type CandleInterval = "1s" | "1m" | "5m" | "15m";
@@ -35,7 +35,7 @@ export interface TradeRecord {
 
 export interface MarketSnapshot {
   marketId: MarketId;
-  // snapshot 可能不返回 seq；为空时由首条 book_delta 建立本地基线。
+  // Snapshot may not include seq; when missing, first book_delta builds local baseline.
   seq: number | null;
   bids: PriceLevel[];
   asks: PriceLevel[];
@@ -84,7 +84,7 @@ export interface BookDeltaMessage {
   type: "book_delta";
   marketId: MarketId;
   ts: number;
-  // 序列号必须严格递增，否则需要触发 gap 恢复。
+  // Sequence must be strictly increasing, otherwise trigger gap recovery.
   seq: number;
   bids: PriceLevel[];
   asks: PriceLevel[];
@@ -112,15 +112,9 @@ export type MarketMessage =
   | PongMessage
   | ResetMessage;
 
-export interface SolanaStreamFilters {
-  programs: string[];
-  accounts: string[];
-}
-
 export interface SolanaStreamHelloMessage {
   type: "stream_hello";
   serverTime: number;
-  filters: SolanaStreamFilters;
 }
 
 export interface SolanaTransactionMessage {
@@ -153,12 +147,7 @@ export type SolanaStreamMessage =
   | SolanaReorgMessage
   | PongMessage;
 
-export type ConnectionState =
-  | "idle"
-  | "connecting"
-  | "open"
-  | "gap-detected"
-  | "reconnecting";
+export type ConnectionState = "idle" | "connecting" | "open" | "gap-detected" | "reconnecting";
 
 export interface MessageRates {
   bookPerSecond: number;

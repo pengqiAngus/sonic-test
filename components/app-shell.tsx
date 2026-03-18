@@ -6,19 +6,19 @@ import { ConnectionIndicator } from "@/components/connection-indicator";
 import { OrderPanel } from "@/components/order-panel";
 import { OrderbookPanel } from "@/components/orderbook-panel";
 import { Panel } from "@/components/panel";
-import { SolanaStreamProvider } from "@/components/solana-stream-provider";
 import { TradeTape } from "@/components/trade-tape";
 import { SolanaTransactionsPanel } from "@/components/solana-transactions-panel";
 import { TVChart } from "@/components/tv-chart";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { WebSocketProvider } from "@/components/websocket-provider";
+import { SolanaStreamProvider } from "@/context/solana-stream-provider";
+import { WebSocketProvider } from "@/context/websocket-provider";
 import { useMidPrice } from "@/lib/hooks";
 import type { CandleInterval, MarketId } from "@/lib/types";
 import { SUPPORTED_MARKETS } from "@/lib/types";
 
 const INTERVALS: CandleInterval[] = ["1s", "1m", "5m", "15m"];
 
-// 页面主壳：负责模块编排与市场/周期切换，不承载行情计算逻辑。
+// Main page shell: orchestrates modules and market/interval switching, not data computation.
 export function AppShell(): React.ReactElement {
   const [marketId, setMarketId] = useState<MarketId>("BTC-PERP");
   const [interval, setInterval] = useState<CandleInterval>("1m");
@@ -76,17 +76,13 @@ export function AppShell(): React.ReactElement {
           </div>
         </header>
 
-        {/* marketId 变化时重建 Provider，确保连接与本地缓存同步重置 */}
+        {/* Recreate provider on market change to reset connections and local caches together */}
         <WebSocketProvider key={marketId} marketId={marketId}>
           <TabTitleSync marketId={marketId} />
           <ConnectionIndicator />
 
           <div className="grid gap-6 xl:grid-cols-[minmax(0,1.8fr)_minmax(320px,0.7fr)]">
-            <Panel
-              eyebrow="Phase 3"
-              title="TVChart + Live Candle Sync"
-              description="历史 candle 通过 SWR 拉取，最新 trade 在客户端直接聚合进当前柱并调用 series.update()。"
-            >
+            <Panel title="TVChart + Live Candle Sync">
               <TVChart marketId={marketId} interval={interval} />
             </Panel>
             <OrderPanel marketId={marketId} />
@@ -104,7 +100,7 @@ export function AppShell(): React.ReactElement {
                   Solana Transactions
                 </TabsTrigger>
               </TabsList>
-              {/* TabsContent 默认按需挂载；Solana Stream 已在上层常驻订阅并写入 store。 */}
+              {/* TabsContent mounts on demand; Solana stream stays subscribed at provider level and writes into store. */}
               <TabsContent value="orderbook">
                 <OrderbookPanel marketId={marketId} />
               </TabsContent>
@@ -116,30 +112,6 @@ export function AppShell(): React.ReactElement {
               </TabsContent>
             </Tabs>
           </SolanaStreamProvider>
-          <Panel
-            eyebrow="Phase 4"
-            title="Performance Audit Notes"
-            description="这部分把题面要求的性能策略显式展示出来，便于评审解释。"
-          >
-            <ul className="grid gap-3 text-sm leading-6 text-slate-700">
-              <li className="rounded-3xl border border-slate-200 bg-white/80 px-4 py-3">
-                Snapshot-first：先拉 `/snapshot`，用 `seq` 初始化 `lastSeq`，再连接 WS。
-              </li>
-              <li className="rounded-3xl border border-slate-200 bg-white/80 px-4 py-3">
-                `requestAnimationFrame` 批处理：消息先进入 ref 缓冲，再统一提交到 Zustand。
-              </li>
-              <li className="rounded-3xl border border-slate-200 bg-white/80 px-4 py-3">
-                Orderbook 使用 <code>Map&lt;number, number&gt;</code> 存储档位，删除档位时执行{" "}
-                <code>delete</code>。
-              </li>
-              <li className="rounded-3xl border border-slate-200 bg-white/80 px-4 py-3">
-                UI 侧通过 `useDeferredValue` + `react-virtual` 降低高频排序和长列表成本。
-              </li>
-              <li className="rounded-3xl border border-slate-200 bg-white/80 px-4 py-3">
-                gap 检测由 XState 驱动进入 `GAP_DETECTED`，SWR 重新拉取快照并重建本地状态。
-              </li>
-            </ul>
-          </Panel>
         </WebSocketProvider>
       </div>
     </main>

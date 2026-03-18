@@ -18,8 +18,8 @@ import { cn } from "@/lib/utils";
 
 const orderSchema = z.object({
   side: z.enum(["buy", "sell"]),
-  price: z.coerce.number().positive("价格必须大于 0"),
-  size: z.coerce.number().positive("数量必须大于 0")
+  price: z.coerce.number().positive("Price must be greater than 0"),
+  size: z.coerce.number().positive("Size must be greater than 0")
 });
 
 type OrderFormValues = z.infer<typeof orderSchema>;
@@ -46,7 +46,7 @@ export function OrderPanel({ marketId }: { marketId: MarketId }): React.ReactEle
       return;
     }
 
-    // 首次进入时如果价格为空，用当前中间价作为默认参考。
+    // If price is empty on first entry, use current mid price as default reference.
     if (form.getValues("price") <= 0) {
       form.setValue("price", Number(midPrice.toFixed(2)));
     }
@@ -61,7 +61,7 @@ export function OrderPanel({ marketId }: { marketId: MarketId }): React.ReactEle
       size: normalizeSize(values.size)
     };
 
-    // 提交期间统一由 toast 展示 loading/success/error。
+    // Use toast.promise for a unified loading/success/error flow.
     await toast.promise(trigger(payload), {
       loading: `Submitting ${payload.side} order...`,
       success: (response) =>
@@ -71,11 +71,7 @@ export function OrderPanel({ marketId }: { marketId: MarketId }): React.ReactEle
   }
 
   return (
-    <Panel
-      eyebrow="Execution"
-      title="Mock Order Entry"
-      description="使用 zod + react-hook-form 做输入校验，并通过 sonner 提示状态。"
-    >
+    <Panel title="Mock Order Entry">
       <form className="grid gap-4" onSubmit={form.handleSubmit(onSubmit)}>
         <div className="grid grid-cols-2 gap-3">
           {(["buy", "sell"] as const).map((side) => {
@@ -86,7 +82,7 @@ export function OrderPanel({ marketId }: { marketId: MarketId }): React.ReactEle
                 key={side}
                 type="button"
                 className={cn(
-                  "rounded-3xl border px-4 py-3 text-sm font-semibold transition",
+                  "cursor-pointer rounded-3xl border px-4 py-3 text-sm font-semibold transition",
                   active && side === "buy" && "border-emerald-400 bg-emerald-50 text-emerald-900",
                   active && side === "sell" && "border-amber-400 bg-amber-50 text-amber-900",
                   !active && "border-slate-200 bg-white text-slate-700"
@@ -103,7 +99,6 @@ export function OrderPanel({ marketId }: { marketId: MarketId }): React.ReactEle
 
         <Field
           label="Market"
-          hint="题面要求使用 SMFS 原生 marketId。"
           input={
             <input
               readOnly
@@ -115,7 +110,6 @@ export function OrderPanel({ marketId }: { marketId: MarketId }): React.ReactEle
 
         <Field
           label="Price"
-          hint={midPrice ? `Best mid: ${midPrice.toFixed(2)}` : "Waiting for book..."}
           error={form.formState.errors.price?.message}
           input={
             <input
@@ -129,7 +123,6 @@ export function OrderPanel({ marketId }: { marketId: MarketId }): React.ReactEle
 
         <Field
           label="Size"
-          hint="使用 bignumber.js 归一化精度。"
           error={form.formState.errors.size?.message}
           input={
             <input
@@ -155,12 +148,10 @@ export function OrderPanel({ marketId }: { marketId: MarketId }): React.ReactEle
 
 function Field({
   label,
-  hint,
   error,
   input
 }: {
   label: string;
-  hint: string;
   error?: string;
   input: React.ReactNode;
 }): React.ReactElement {
@@ -168,7 +159,9 @@ function Field({
     <label className="grid gap-2">
       <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
         <span className="text-sm font-medium text-slate-700">{label}</span>
-        <span className="break-all text-xs text-slate-500 sm:text-right">{error ?? hint}</span>
+        {error ? (
+          <span className="break-all text-xs text-slate-500 sm:text-right">{error}</span>
+        ) : null}
       </div>
       {input}
     </label>

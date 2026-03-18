@@ -28,10 +28,10 @@ vi.mock("@/components/tv-chart", () => ({
     </div>
   )
 }));
-vi.mock("@/components/websocket-provider", () => ({
+vi.mock("@/context/websocket-provider", () => ({
   WebSocketProvider: ({ children }: { children: React.ReactNode }) => <div>{children}</div>
 }));
-vi.mock("@/components/solana-stream-provider", () => ({
+vi.mock("@/context/solana-stream-provider", () => ({
   SolanaStreamProvider: ({ children }: { children: React.ReactNode }) => <div>{children}</div>
 }));
 vi.mock("@/lib/hooks", () => ({

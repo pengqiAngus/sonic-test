@@ -3,8 +3,8 @@ import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 
 import { Providers } from "@/components/providers";
-import { SolanaStreamProvider } from "@/components/solana-stream-provider";
-import { WebSocketProvider } from "@/components/websocket-provider";
+import { SolanaStreamProvider } from "@/context/solana-stream-provider";
+import { WebSocketProvider } from "@/context/websocket-provider";
 
 const sendMock = vi.fn();
 const matchesMock = vi.fn().mockReturnValue(false);

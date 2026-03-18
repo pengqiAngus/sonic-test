@@ -4,7 +4,7 @@ import type { TradeRecord } from "@/lib/types";
 import { useMarketStore } from "@/store/market-store";
 import { useSolanaStreamStore, type SolanaStreamStoreState } from "@/store/solana-stream-store";
 
-// 行情读取 hooks 统一放在 lib，避免与 store 写入逻辑耦合在同一文件。
+// Keep market read hooks in lib to avoid coupling with store write logic.
 
 export function useTopLevels(
   side: "bids" | "asks",
@@ -27,7 +27,7 @@ export function useBookLevels(side: "bids" | "asks"): Array<{
   const source = useMarketStore((state) => (side === "bids" ? state.bids : state.asks));
 
   return useMemo(() => {
-    // Map 是可变对象，依赖 version 显式触发重算。
+    // Map is mutable; use version to explicitly trigger recomputation.
     void bookVersion;
 
     const sorted = Array.from(source.entries(), ([price, size]) => ({ price, size })).sort(
@@ -49,7 +49,6 @@ export function useBookLevels(side: "bids" | "asks"): Array<{
 export function useRecentTrades(limit = 24): TradeRecord[] {
   const tradeVersion = useMarketStore((state) => state.tradeVersion);
   const trades = useMarketStore((state) => state.trades);
-
   return useMemo(() => {
     void tradeVersion;
     return trades.slice(0, limit);
@@ -83,7 +82,6 @@ export function useSolanaStream(): Pick<
   | "transactions"
   | "lastReorgAt"
   | "lastRollbackSlot"
-  | "activeFilters"
 > {
   const status = useSolanaStreamStore((state) => state.status);
   const statusReason = useSolanaStreamStore((state) => state.statusReason);
@@ -91,7 +89,6 @@ export function useSolanaStream(): Pick<
   const transactions = useSolanaStreamStore((state) => state.transactions);
   const lastReorgAt = useSolanaStreamStore((state) => state.lastReorgAt);
   const lastRollbackSlot = useSolanaStreamStore((state) => state.lastRollbackSlot);
-  const activeFilters = useSolanaStreamStore((state) => state.activeFilters);
 
   return {
     status,
@@ -99,7 +96,6 @@ export function useSolanaStream(): Pick<
     reconnectAttempt,
     transactions,
     lastReorgAt,
-    lastRollbackSlot,
-    activeFilters
+    lastRollbackSlot
   };
 }

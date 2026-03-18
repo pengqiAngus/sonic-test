@@ -1,50 +1,58 @@
 # Sonic Perps UI
 
-一个基于 Next.js 14、SWR、XState、Zustand 与 Lightweight Charts 的 Sonic 永续交易前端实现，覆盖题面要求的 Phase 1 到 Phase 4。
+一个基于 Next.js、SWR、XState、Zustand、Lightweight Charts 的 Sonic 永续行情前端页面。
 
 ## 架构说明
 
-- `app/page.tsx` 只负责挂载应用壳层。
-- `components/websocket-provider.tsx` 实现快照优先、WebSocket 生命周期、seq gap 检测、SWR 快照纠错与 RAF 批处理。
-- `store/market-store.ts` 是唯一的全局状态中心，使用 `Map<number, number>` 保存订单簿，`trades` 保存最近成交，并暴露细粒度 selector。
-- `components/tv-chart.tsx` 使用 Lightweight Charts 拉取历史 candles，并用实时 trade 更新当前 candle。
-- `components/orderbook-panel.tsx` 和 `components/trade-tape.tsx` 使用 `@tanstack/react-virtual` 渲染长列表。
-- `components/order-panel.tsx` 使用 `react-hook-form` + `zod` 校验订单参数，并通过 `sonner` 显示提交流程。
+- 页面壳层：`app/page.tsx` 仅挂载 `AppShell`，由 `components/app-shell.tsx` 编排图表、订单簿、成交流、下单面板与性能说明区。
+- 行情链路（核心）：`context/websocket-provider.tsx` 负责 snapshot-first、WS 生命周期、seq 连续性校验、gap 检测、reset 恢复、消息速率统计。
+- 连接控制面：`lib/websocket-machine.ts` 用 XState 管理 `idle -> connecting -> open -> reconnecting -> gapDetected`，将重连退避和 gap 修复流程显式化。
+- 数据落地层：`store/market-store.ts` 使用 `Map<number, number>` 保存 bids/asks，`trades` 保存最近成交；通过 `bookVersion/tradeVersion` 驱动精准重算。
+- 读取层：`lib/hooks.ts` 统一对外暴露 `useBookLevels/useRecentTrades/useMidPrice`，隔离 UI 与 store 写入逻辑。
+- 图表与交易：`components/tv-chart.tsx` 先拉历史 candles，再把最新 trade 聚合进当前 K 线；`components/order-panel.tsx` 通过 `zod + react-hook-form + SWR mutation` 完成下单表单。
+- Solana Stream：`context/solana-stream-provider.tsx` + `store/solana-stream-store.ts` 独立维护 `/ws/stream` 状态，展示 transactions，并在 `reorg` 时按 `rollbackSlot` 回滚本地列表。
 
-## 性能决策
+## 性能决策（优化与原因）
 
-- Snapshot-first：只有在 `/markets/:marketId/snapshot` 成功后才启动 WebSocket，保证 `lastSeq` 初值可信。
-- RAF batching：WS 消息先写入 `useRef` 缓冲，不在每条消息上触发 React 渲染；统一在 `requestAnimationFrame` 中提交到 Zustand。
-- `Map` 存储订单簿：增删改查为 O(1)，`size === 0` 时直接 `delete`。
-- 细粒度订阅：组件通过 `useBookLevels` / `useRecentTrades` 只读取自己关心的数据。
-- UI defer：列表消费端使用 `useDeferredValue`，降低高频排序对输入与按钮交互的影响。
-- 虚拟化：订单簿和成交明细都使用 `react-virtual`，避免全量 DOM。
+- Snapshot-first 再建 WS：先建立一致性基线，再消费增量，避免冷启动时错序导致本地账本污染。
+- RAF 批处理 + hidden tab 兜底：高频消息先缓冲到 frame，再每帧提交一次；标签页隐藏时改为短定时器 flush，防止缓冲无限堆积。
+- `Map` 存储订单簿：增量更新/删除是 O(1)，适合高频档位变更；并限制单侧最大档位，防止内存和滚动高度失控。
+- 细粒度订阅 + `useDeferredValue`：UI 只订阅需要字段，并延后高频列表消费，减轻主线程阻塞。
+- 列表虚拟化：orderbook / trade tape / solana transactions 全部接入 `@tanstack/react-virtual`，控制 DOM 数量。
+- 图表增量更新：历史数据一次 `setData`，实时仅 `series.update` 当前柱，避免整图重绘。
 
 ## 已识别瓶颈
 
-- `useBookLevels` 当前仍会在每次 bookVersion 变化后对整侧数据排序，若档位显著增加，需进一步改成增量有序结构。
-- `lightweight-charts` 目前在客户端动态导入，首屏首次打开图表仍存在一次性初始化成本。
-- 订单接口 schema 无法通过 `/openapi.json` 二次确认，因为该端点返回了 `503 Service Temporarily Unavailable`，当前按题面字段实现。
+- `useBookLevels` 仍是“版本变更后整侧排序”，在极深盘口下 CPU 压力会上升。
+- `tradeVersion` 高频变化会带动图表与交易列表频繁更新；在更高吞吐下需进一步做分层采样或 worker 化。
+- Solana 交易面板当前 `pushTransaction` 采用数组 `some` 去重，数据量扩大后会退化为 O(n) 检查。
+- `lightweight-charts` 首次动态导入仍有初始化成本，弱网下首开图表会有感知延迟。
+- 当前测试以组件渲染和关键流程断言为主，尚缺真实 WS 高压场景下的端到端性能回归。
 
-## 10 倍负载扩展策略
+## 扩展策略（10 倍负载场景）
 
-- 将 orderbook 排序从每帧全量排序升级为 price bucket + binary insertion 或跳表。
-- 在 provider 中按市场拆分 actor，把交易、订单簿与统计面板拆成独立消息通道。
-- 把 trade tape 与 orderbook 派生数据迁移到 Web Worker，主线程只接收可渲染快照。
-- 为 snapshot/candles 增加边缘缓存和 gzip/brotli，以减少冷启动流量。
-- 对图表与列表引入“视图层采样”，例如在超高频场景下降低非关键面板刷新率到 30fps。
+- 将盘口结构升级为“有序索引 + 增量插入”（如 price bucket + binary insertion / 跳表），避免每次全量排序。
+- 将派生计算下沉至 Web Worker（book levels、running total、trade 聚合），主线程只做视图渲染。
+- 对非关键面板实施自适应采样（30fps/15fps），关键路径（连接状态、最佳买卖价）保持实时。
+- Solana 去重改为 `Set/Map` 索引（signature -> index），将重复检测从 O(n) 降到接近 O(1)。
+- 按市场拆分 provider/store 或 actor，减少单仓库写放大与跨面板联动。
+- 在 API 边缘层为 snapshot/candles 做缓存压缩与预热，降低冷启动和重连恢复时延。
 
 ## 取舍说明
 
-- 优先把题面里的正确性约束写成可运行代码，而不是一次性堆满所有业务细节。
-- 下单流目前仅实现 limit mock order；高级订单类型可以在现有 schema 上继续扩展。
-- 当前已提供 GitHub Actions 质量门禁（`lint + typecheck + build`）；后续可补充自动化测试并将 `test` 纳入 CI。
+- 双 Provider（市场 WS 与 Solana WS）而非单总线：可读性和故障隔离更好，但增加了连接管理与状态同步复杂度。
+- 使用可变 `Map` + `version` 计数，而非纯不可变结构：换来高频写入性能，但调试时需依赖版本号理解重算时机。
+- API 层做防御式归一化（缺字段补默认值、数值标准化）：提升前端稳健性，但可能掩盖后端契约漂移，需要结合日志监控。
+- 当前优先保证“序列一致性 + 重连恢复 + UI 可响应”，对极端负载下的最优排序算法与 worker 化暂未一次性引入，以控制实现复杂度。
+- 测试策略先覆盖核心组件与 Provider 行为，CI 采用 `lint + typecheck + test + build`，取舍了更重的 e2e 成本以保持开发迭代速度。
 
 ## 本地运行
 
 ```bash
-npm install
-npm run typecheck
-npm run build
-npm run dev
+pnpm install
+pnpm run lint
+pnpm run typecheck
+pnpm run test
+pnpm run build
+pnpm run dev
 ```

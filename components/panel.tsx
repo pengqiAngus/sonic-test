@@ -9,7 +9,7 @@ interface PanelProps {
   action?: React.ReactNode;
 }
 
-// 统一卡片容器，减少各面板重复样式代码。
+// Shared panel container to reduce repeated styles across sections.
 export function Panel({
   title,
   eyebrow,

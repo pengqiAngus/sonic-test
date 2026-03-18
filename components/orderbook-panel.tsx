@@ -11,7 +11,7 @@ import { cn } from "@/lib/utils";
 
 const ROW_HEIGHT = 30;
 
-// 深度面板：读取 store 中已排序的 bids/asks，并做虚拟化渲染。
+// Depth panel: read sorted bids/asks from store and render with virtualization.
 export function OrderbookPanel({ marketId }: { marketId: MarketId }): React.ReactElement {
   const bids = useDeferredValue(useBookLevels("bids"));
   const asks = useDeferredValue(useBookLevels("asks"));
@@ -19,7 +19,6 @@ export function OrderbookPanel({ marketId }: { marketId: MarketId }): React.Reac
 
   return (
     <Panel
-      eyebrow="Depth"
       title="Orderbook"
       className="noise-grid"
       action={
@@ -84,7 +83,7 @@ function BookSide({
   levels: Array<{ price: number; size: number; total: number }>;
 }): React.ReactElement {
   const parentRef = useRef<HTMLDivElement>(null);
-  // 只渲染可视区域行，避免全量列表重排。
+  // Render only visible rows to avoid full-list reflow.
   const rowVirtualizer = useVirtualizer({
     count: levels.length,
     getScrollElement: () => parentRef.current,

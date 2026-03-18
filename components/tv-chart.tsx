@@ -17,7 +17,7 @@ const INTERVAL_SECONDS: Record<CandleInterval, number> = {
 };
 const UTC_PLUS_8_OFFSET_SECONDS = 8 * 60 * 60;
 
-// 转换为 lightweight-charts 需要的蜡烛格式。
+// Convert into the candlestick shape required by lightweight-charts.
 function toChartCandle(candle: Candle): CandlestickData {
   return {
     time: candle.time as CandlestickData["time"],
@@ -28,7 +28,7 @@ function toChartCandle(candle: Candle): CandlestickData {
   };
 }
 
-// 用最新成交实时推进当前 K 线（或开启新 K 线）。
+// Update current candle in real time from latest trade (or start a new candle).
 function mergeTradeIntoCandle(
   trade: TradeRecord,
   previous: Candle | null,
@@ -125,7 +125,7 @@ export function TVChart({
     let cleanup = () => undefined;
     let cancelled = false;
 
-    // 延迟加载图表库，避免首屏 bundle 过重。
+    // Lazy-load chart library to keep initial bundle smaller.
     void import("lightweight-charts").then(({ CandlestickSeries, ColorType, createChart }) => {
       if (cancelled || !containerRef.current) {
         return;
@@ -134,7 +134,7 @@ export function TVChart({
       const chart = createChart(containerRef.current, {
         autoSize: true,
         localization: {
-          // lightweight-charts 默认按 UTC 显示，这里强制映射到 UTC+8。
+          // lightweight-charts defaults to UTC; map display time to UTC+8.
           timeFormatter: (time: Time) => {
             const unixSeconds = readUnixSecondsFromChartTime(time);
             if (unixSeconds === null) {
@@ -234,7 +234,7 @@ export function TVChart({
       return;
     }
 
-    // 历史 setData + 实时 update 的组合方式可减少重绘成本。
+    // setData for history + update for realtime minimizes redraw cost.
     const nextCandle = mergeTradeIntoCandle(deferredTrade, latestCandleRef.current, interval);
 
     latestCandleRef.current = nextCandle;

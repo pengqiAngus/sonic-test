@@ -26,12 +26,7 @@ function parseMessage(raw: string): SolanaStreamMessage | null {
 
 function isStreamHelloMessage(message: unknown): message is SolanaStreamHelloMessage {
   return (
-    isObject(message) &&
-    message.type === "stream_hello" &&
-    typeof message.serverTime === "number" &&
-    isObject(message.filters) &&
-    Array.isArray(message.filters.programs) &&
-    Array.isArray(message.filters.accounts)
+    isObject(message) && message.type === "stream_hello" && typeof message.serverTime === "number"
   );
 }
 
@@ -144,10 +139,6 @@ export function SolanaStreamProvider({
       }
 
       if (isStreamHelloMessage(message)) {
-        useSolanaStreamStore.getState().setActiveFilters({
-          programs: message.filters.programs,
-          accounts: message.filters.accounts
-        });
         return;
       }
 

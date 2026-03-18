@@ -12,7 +12,7 @@ import { cn } from "@/lib/utils";
 
 const ROW_HEIGHT = 32;
 
-// 成交明细：只展示最近 N 条，并通过虚拟列表降低滚动开销。
+// Trade tape: display the latest N entries with virtualization for lower scroll cost.
 export function TradeTape({ marketId }: { marketId: MarketId }): React.ReactElement {
   const trades = useDeferredValue(useRecentTrades(1000));
   const parentRef = useRef<HTMLDivElement>(null);
@@ -26,9 +26,7 @@ export function TradeTape({ marketId }: { marketId: MarketId }): React.ReactElem
 
   return (
     <Panel
-      eyebrow="Tape"
       title="Trade Stream"
-      description="Recent trades 通过虚拟化列表渲染，避免高频 append 导致整列重排。"
       action={
         <span className="rounded-full border border-slate-200 bg-white/80 px-3 py-1 text-xs font-semibold text-slate-700">
           {marketId}

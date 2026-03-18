@@ -9,20 +9,13 @@ import type { ConnectionState } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { useMarketStore } from "@/store/market-store";
 
-const STORAGE_KEY = "sonic:connection-indicator:layout";
 const MOBILE_BREAKPOINT = 768;
-
-interface IndicatorLayout {
-  x: number;
-  y: number;
-  isMinimized: boolean;
-}
 
 function formatStatus(status: ConnectionState): string {
   return CONNECTION_STATE_LABEL[status];
 }
 
-// 根据状态给指示灯配色，便于快速识别连接健康度。
+// Map status to indicator color for quick connection-health recognition.
 function statusTone(status: ConnectionState): string {
   return CONNECTION_STATE_TONE_CLASS[status];
 }
@@ -41,7 +34,6 @@ export function ConnectionIndicator(): React.ReactElement {
   const [isMobileViewport, setIsMobileViewport] = useState(false);
   const [isViewportReady, setIsViewportReady] = useState(false);
   const [position, setPosition] = useState({ x: 16, y: 96 });
-  const [hasRestoredLayout, setHasRestoredLayout] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<{ pointerId: number; offsetX: number; offsetY: number } | null>(null);
   const livePositionRef = useRef(position);
@@ -96,34 +88,11 @@ export function ConnectionIndicator(): React.ReactElement {
       return;
     }
 
-    let restored = false;
-
-    // 恢复上次拖拽位置与折叠状态。
-    try {
-      const raw = window.localStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw) as Partial<IndicatorLayout>;
-        if (
-          typeof parsed.x === "number" &&
-          typeof parsed.y === "number" &&
-          typeof parsed.isMinimized === "boolean"
-        ) {
-          setPosition(clampPosition(parsed.x, parsed.y));
-          setIsMinimized(parsed.isMinimized);
-          restored = true;
-        }
-      }
-    } catch {
-      // Ignore broken localStorage payload and fall back to default position.
-    }
-
-    if (!restored) {
-      const width = containerRef.current.offsetWidth;
-      const initialX = Math.max(12, window.innerWidth - width - 20);
-      setPosition({ x: initialX, y: 96 });
-    }
-
-    setHasRestoredLayout(true);
+    const isMobileByWidth = window.innerWidth < MOBILE_BREAKPOINT;
+    const width = containerRef.current.offsetWidth;
+    const initialX = Math.max(12, window.innerWidth - width - 20);
+    setPosition({ x: initialX, y: 96 });
+    setIsMinimized(isMobileByWidth);
   }, []);
 
   useEffect(() => {
@@ -144,24 +113,6 @@ export function ConnectionIndicator(): React.ReactElement {
   useEffect(() => {
     setPosition((prev) => clampPosition(prev.x, prev.y));
   }, [isMinimized]);
-
-  useEffect(() => {
-    if (typeof window === "undefined" || !hasRestoredLayout) {
-      return;
-    }
-
-    const payload: IndicatorLayout = {
-      x: position.x,
-      y: position.y,
-      isMinimized
-    };
-
-    try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
-    } catch {
-      // Ignore storage failures (e.g. private mode quotas).
-    }
-  }, [position, isMinimized, hasRestoredLayout]);
 
   const onDragStart = (event: React.PointerEvent<HTMLDivElement>): void => {
     if (isMobileViewport) {
@@ -278,7 +229,7 @@ export function ConnectionIndicator(): React.ReactElement {
             setIsMinimized((prev) => !prev);
           }}
         >
-          {isMinimized ? "展开" : "最小化"}
+          {isMinimized ? "Expand" : "Minimize"}
         </button>
       </div>
 
@@ -286,7 +237,6 @@ export function ConnectionIndicator(): React.ReactElement {
         <Panel
           eyebrow="Transport"
           title="Connection Health"
-          description="XState 管理连接生命周期，Zustand 只消费稳定帧。"
           action={
             <span className="w-[120px] text-center rounded-full border border-slate-200 bg-white/80 px-3 py-1 text-xs font-semibold text-slate-700">
               {marketId}
@@ -311,7 +261,7 @@ export function ConnectionIndicator(): React.ReactElement {
               </div>
               {gap ? (
                 <p className="mt-3 rounded-2xl bg-amber-50 px-3 py-2 text-sm text-amber-900">
-                  seq 缺口：expected {gap.expectedSeq} / received {gap.receivedSeq}
+                  Sequence gap: expected {gap.expectedSeq} / received {gap.receivedSeq}
                 </p>
               ) : null}
               {error ? <p className="mt-3 text-sm text-slate-500">{error}</p> : null}

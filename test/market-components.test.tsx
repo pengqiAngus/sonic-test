@@ -41,8 +41,7 @@ vi.mock("@/lib/hooks", () => ({
       }
     ],
     lastReorgAt: null,
-    lastRollbackSlot: null,
-    activeFilters: { programs: ["p1"], accounts: [] }
+    lastRollbackSlot: null
   })
 }));
 

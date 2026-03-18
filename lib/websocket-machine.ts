@@ -3,33 +3,33 @@ import { assign, setup } from "xstate";
 import type { GapState } from "@/lib/types";
 
 // ---------------------------------------------------------------------
-// WebSocket 连接状态机（只管“连接控制面”）：
-// - 不处理订单簿/成交数据本身
-// - 只负责：何时连接、何时重连、何时等待快照修复 gap
+// WebSocket connection state machine (control plane only):
+// - does not process orderbook/trade data itself
+// - only decides: when to connect, reconnect, and wait for snapshot gap recovery
 //
-// 设计目标：
-// 1) 连接行为可预测（所有迁移都显式）
-// 2) 出错可恢复（重连 + gap 修复）
-// 3) 与数据处理解耦（provider 只发事件给状态机）
+// Design goals:
+// 1) predictable connection behavior (all transitions explicit)
+// 2) recoverable failures (reconnect + gap repair)
+// 3) decoupled from data processing (provider sends events only)
 // ---------------------------------------------------------------------
 
-// 连接状态机上下文：
-// - attempt: 当前重连次数（用于指数退避）
-// - reason: 最近一次错误/断开原因
-// - gap: 序列缺口信息
+// Connection machine context:
+// - attempt: current reconnect attempt (for exponential backoff)
+// - reason: latest error/close reason
+// - gap: sequence gap metadata
 interface WebSocketMachineContext {
   attempt: number;
   reason: string | null;
   gap: GapState | null;
 }
 
-// 状态机输入事件（来自 websocket-provider）：
-// - CONNECT: 允许开始建立连接
-// - SOCKET_OPEN: 底层 ws onopen
-// - SOCKET_ERROR/SOCKET_CLOSED: 异常路径，进入重连
-// - GAP_DETECTED: book seq 不连续，进入“等待快照修复”状态
-// - SNAPSHOT_SYNCED: gap 修复完成，可以重新连接
-// - DISCONNECT: 主动断开（卸载/切市场），回到 idle
+// Machine input events (from websocket-provider):
+// - CONNECT: allow connection start
+// - SOCKET_OPEN: low-level ws onopen
+// - SOCKET_ERROR/SOCKET_CLOSED: failure path, enter reconnecting
+// - GAP_DETECTED: non-continuous book seq, enter wait-for-snapshot-repair
+// - SNAPSHOT_SYNCED: gap repair done, can reconnect
+// - DISCONNECT: intentional disconnect (unmount/switch market), go back to idle
 type WebSocketMachineEvent =
   | { type: "CONNECT" }
   | { type: "SOCKET_OPEN" }
@@ -39,27 +39,26 @@ type WebSocketMachineEvent =
   | { type: "SNAPSHOT_SYNCED" }
   | { type: "DISCONNECT"; reason?: string };
 
-// 状态机负责连接生命周期，不直接处理行情数据内容。
+// Machine controls connection lifecycle and does not process market payload data directly.
 export const websocketMachine = setup({
   types: {
     context: {} as WebSocketMachineContext,
     events: {} as WebSocketMachineEvent
   },
   delays: {
-    // 1s, 2s, 4s... 最多 15s
-    retryDelay: ({ context }) =>
-      Math.min(1_000 * 2 ** Math.max(context.attempt - 1, 0), 15_000)
+    // 1s, 2s, 4s... capped at 15s
+    retryDelay: ({ context }) => Math.min(1_000 * 2 ** Math.max(context.attempt - 1, 0), 15_000)
   },
   actions: {
-    // 每次连接失败（error/close）都累加重连次数。
+    // Increment reconnect attempt after each connection failure (error/close).
     bumpAttempt: assign({
       attempt: ({ context }) => context.attempt + 1
     }),
-    // 连接成功后清零重连次数。
+    // Reset reconnect attempt after successful open.
     resetAttempt: assign({
       attempt: 0
     }),
-    // 记录 gap 信息，方便 UI 展示 expected/received seq。
+    // Store gap data so UI can display expected/received seq.
     rememberGap: assign({
       gap: ({ event }) =>
         event.type === "GAP_DETECTED"
@@ -70,22 +69,21 @@ export const websocketMachine = setup({
           : null,
       reason: () => "Sequence gap detected"
     }),
-    // gap 修复成功后清空 gap 和错误原因。
+    // Clear gap and error reason after successful gap repair.
     clearGap: assign({
       gap: null,
       reason: null
     }),
-    // 记录连接中断原因，便于连接指示器展示。
+    // Record interruption reason for connection indicator display.
     rememberCloseReason: assign({
       reason: ({ event }) =>
         event.type === "SOCKET_CLOSED" || event.type === "SOCKET_ERROR"
-          ? event.reason ?? "Connection interrupted"
+          ? (event.reason ?? "Connection interrupted")
           : null
     }),
-    // 主动断开时保留原因（比如 Provider unmounted）。
+    // Keep disconnect reason for intentional closes (e.g. provider unmounted).
     rememberDisconnect: assign({
-      reason: ({ event }) =>
-        event.type === "DISCONNECT" ? event.reason ?? "Disconnected" : null
+      reason: ({ event }) => (event.type === "DISCONNECT" ? (event.reason ?? "Disconnected") : null)
     })
   }
 }).createMachine({
@@ -97,7 +95,7 @@ export const websocketMachine = setup({
     gap: null
   }),
   states: {
-    // 初始静止态：不连接、不重连，等待外部发 CONNECT。
+    // Initial idle state: no connect/reconnect, wait for external CONNECT.
     idle: {
       on: {
         CONNECT: {
@@ -105,16 +103,16 @@ export const websocketMachine = setup({
         }
       }
     },
-    // 连接进行中：等待 SOCKET_OPEN 或失败事件。
+    // Connecting state: wait for SOCKET_OPEN or failure events.
     connecting: {
       on: {
         SOCKET_OPEN: {
-          // 连上后进入 open，并清理失败痕迹。
+          // Enter open on success and clear previous failure traces.
           target: "open",
           actions: ["resetAttempt", "clearGap"]
         },
         SOCKET_ERROR: {
-          // 连接阶段出错，进入自动重连。
+          // Connection-stage failure enters automatic reconnect flow.
           target: "reconnecting",
           actions: ["bumpAttempt", "rememberCloseReason"]
         },
@@ -123,22 +121,22 @@ export const websocketMachine = setup({
           actions: ["bumpAttempt", "rememberCloseReason"]
         },
         GAP_DETECTED: {
-          // 理论上连接阶段也可能收到错序事件，统一进入 gap 修复流程。
+          // Out-of-order events can still happen here; use unified gap-repair flow.
           target: "gapDetected",
           actions: "rememberGap"
         },
         DISCONNECT: {
-          // 主动断开优先级最高，直接回 idle。
+          // Intentional disconnect has highest priority, return to idle immediately.
           target: "idle",
           actions: "rememberDisconnect"
         }
       }
     },
-    // 已连接态：正常收消息，监听异常和 gap。
+    // Open state: receive messages and watch for failures/gaps.
     open: {
       on: {
         GAP_DETECTED: {
-          // 数据一致性优先：发现 gap 立刻暂停连接流程，先修复快照。
+          // Data consistency first: on gap, pause flow and repair snapshot immediately.
           target: "gapDetected",
           actions: "rememberGap"
         },
@@ -156,12 +154,12 @@ export const websocketMachine = setup({
         }
       }
     },
-    // gap 修复态：
-    // 该状态不会自动重连，必须等外部在 snapshot 同步后发送 SNAPSHOT_SYNCED。
+    // Gap repair state:
+    // No auto-reconnect here; wait for external SNAPSHOT_SYNCED after snapshot sync.
     gapDetected: {
       on: {
         SNAPSHOT_SYNCED: {
-          // 快照已修复，回到 connecting 重新建链路。
+          // Snapshot repaired, return to connecting and rebuild the link.
           target: "connecting",
           actions: "clearGap"
         },
@@ -171,10 +169,10 @@ export const websocketMachine = setup({
         }
       }
     },
-    // 失败重连态：
-    // 自动等待退避时间后回 connecting；也可以被 DISCONNECT 中断。
+    // Reconnecting state after failure:
+    // Wait backoff then return to connecting; can also be interrupted by DISCONNECT.
     reconnecting: {
-      // 进入该状态后自动等待 retryDelay，再次尝试连接。
+      // On enter, wait retryDelay then attempt to connect again.
       after: {
         retryDelay: {
           target: "connecting"

@@ -13,14 +13,12 @@ export interface SolanaStreamStoreState {
   transactions: SolanaTransactionMessage[];
   lastReorgAt: number | null;
   lastRollbackSlot: number | null;
-  activeFilters: { programs: string[]; accounts: string[] };
   reset: () => void;
   setMachineStatus: (
     status: SolanaStreamStatus,
     statusReason: string | null,
     reconnectAttempt: number
   ) => void;
-  setActiveFilters: (filters: { programs: string[]; accounts: string[] }) => void;
   pushTransaction: (message: SolanaTransactionMessage) => void;
   applyReorg: (ts: number, rollbackSlot: number) => void;
 }
@@ -33,7 +31,6 @@ export const useSolanaStreamStore = create<SolanaStreamStoreState>()(
     transactions: [],
     lastReorgAt: null,
     lastRollbackSlot: null,
-    activeFilters: { programs: [], accounts: [] },
     reset: () =>
       set({
         status: SOLANA_STREAM_STATUS.CONNECTING,
@@ -41,8 +38,7 @@ export const useSolanaStreamStore = create<SolanaStreamStoreState>()(
         reconnectAttempt: 0,
         transactions: [],
         lastReorgAt: null,
-        lastRollbackSlot: null,
-        activeFilters: { programs: [], accounts: [] }
+        lastRollbackSlot: null
       }),
     setMachineStatus: (status, statusReason, reconnectAttempt) =>
       set((state) => {
@@ -54,28 +50,6 @@ export const useSolanaStreamStore = create<SolanaStreamStoreState>()(
           return state;
         }
         return { status, statusReason, reconnectAttempt };
-      }),
-    setActiveFilters: (filters) =>
-      set((state) => {
-        const samePrograms =
-          state.activeFilters.programs.length === filters.programs.length &&
-          state.activeFilters.programs.every(
-            (programId, index) => programId === filters.programs[index]
-          );
-        const sameAccounts =
-          state.activeFilters.accounts.length === filters.accounts.length &&
-          state.activeFilters.accounts.every(
-            (account, index) => account === filters.accounts[index]
-          );
-        if (samePrograms && sameAccounts) {
-          return state;
-        }
-        return {
-          activeFilters: {
-            programs: [...filters.programs],
-            accounts: [...filters.accounts]
-          }
-        };
       }),
     pushTransaction: (message) =>
       set((state) => {

@@ -15,7 +15,7 @@ const ROW_HEIGHT = 56;
 const EXPLORER_BASE_URL = "https://explorer.sonic.game/tx";
 
 export function SolanaTransactionsPanel({ marketId }: { marketId: MarketId }): React.ReactElement {
-  const { status, transactions, lastReorgAt, lastRollbackSlot, activeFilters } = useSolanaStream();
+  const { status, transactions, lastReorgAt, lastRollbackSlot } = useSolanaStream();
   const parentRef = useRef<HTMLDivElement>(null);
 
   const rowVirtualizer = useVirtualizer({
@@ -30,9 +30,7 @@ export function SolanaTransactionsPanel({ marketId }: { marketId: MarketId }): R
 
   return (
     <Panel
-      eyebrow="Bonus"
       title="Recent Transactions (Solana Stream)"
-      description="连接 /ws/stream，展示 signature / slot / fee / program IDs，并在 reorg 时回滚本地列表。"
       action={
         <div className="flex md:flex-row flex-col items-center gap-2 ">
           <span className="rounded-full border border-slate-200 bg-white/80 px-3 py-1 text-xs font-semibold text-slate-700">
@@ -50,15 +48,6 @@ export function SolanaTransactionsPanel({ marketId }: { marketId: MarketId }): R
         ) : null}
       </div>
 
-      <div className="mb-4 rounded-2xl border border-slate-200 bg-white/70 p-3 text-xs text-slate-600">
-        <span className="font-semibold text-slate-800">Active Filters </span>
-        <span>
-          programs={activeFilters.programs.length > 0 ? activeFilters.programs.join(",") : "all"};
-          accounts=
-          {activeFilters.accounts.length > 0 ? activeFilters.accounts.join(",") : "all"}
-        </span>
-      </div>
-
       <div className="overflow-hidden rounded-[24px] border border-slate-200 bg-white/80">
         <div className="grid grid-cols-[1.8fr_0.7fr_0.8fr_1.5fr] border-b border-slate-200 px-4 py-3 text-xs uppercase tracking-[0.2em] text-slate-500">
           <span>Signature</span>
@@ -68,7 +57,9 @@ export function SolanaTransactionsPanel({ marketId }: { marketId: MarketId }): R
         </div>
         <div ref={parentRef} className="h-[360px] overflow-auto">
           {transactions.length === 0 ? (
-            <div className="px-4 py-8 text-center text-sm text-slate-500">等待交易流数据...</div>
+            <div className="px-4 py-8 text-center text-sm text-slate-500">
+              Waiting for transaction stream data...
+            </div>
           ) : (
             <div className="relative" style={{ height: `${rowVirtualizer.getTotalSize()}px` }}>
               {rowVirtualizer.getVirtualItems().map((item) => {
@@ -112,7 +103,7 @@ export function SolanaTransactionsPanel({ marketId }: { marketId: MarketId }): R
                               <ExternalLink className="size-4" />
                             </a>
                           </TooltipTrigger>
-                          <TooltipContent sideOffset={8}>在 Explorer 打开</TooltipContent>
+                          <TooltipContent sideOffset={8}>Open in Explorer</TooltipContent>
                         </Tooltip>
                       </TooltipProvider>
                     </div>

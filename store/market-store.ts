@@ -14,18 +14,18 @@ import type {
 } from "@/lib/types";
 
 // ---------------------------------------------------------------------
-// 这个文件是“行情内存模型”：
-// - websocket-provider 负责收消息与节流
-// - market-store 负责把消息落地成可渲染结构
-// - 对外暴露最小状态写入接口（读取 hooks 已拆分到 lib/hooks.ts）
+// This file is the in-memory market model:
+// - websocket-provider handles incoming messages and throttling
+// - market-store materializes messages into renderable structures
+// - exposes minimal write APIs (read hooks are in lib/hooks.ts)
 // ---------------------------------------------------------------------
 
 const DEFAULT_MARKET: MarketId = "BTC-PERP";
 const MAX_RECENT_TRADES = 1000;
 const MAX_BOOK_LEVELS_PER_SIDE = 1000;
 
-// 每个动画帧内聚合的增量数据：
-// WebSocket 高频消息先写入 frame，再批量提交到 store。
+// Delta payload grouped per animation frame:
+// high-frequency WebSocket messages are buffered and then committed in batches.
 export interface BufferedFrame {
   deltas: BookDeltaMessage[];
   trades: TradeRecord[];
@@ -34,14 +34,14 @@ export interface BufferedFrame {
 
 interface MarketStoreState {
   marketId: MarketId;
-  // book 用 Map 存储（price -> size），增量更新/删除更高效。
+  // Store book as Map (price -> size) for efficient incremental updates/deletes.
   bids: Map<number, number>;
   asks: Map<number, number>;
-  // 最近成交按“新到旧”排列（index 0 永远最新）。
+  // Recent trades are ordered newest -> oldest (index 0 is always latest).
   trades: TradeRecord[];
   lastSeq: number;
-  // version 是“重算开关”：
-  // Map 是可变结构，引用不一定变化，所以需要显式版本号驱动 selector 重算。
+  // version acts as an explicit recomputation switch:
+  // Map is mutable and reference may stay the same, so selectors rely on version bumps.
   bookVersion: number;
   tradeVersion: number;
   connectionState: ConnectionState;
@@ -64,8 +64,8 @@ interface MarketStoreState {
   markPong: (ts: number) => void;
 }
 
-// 将快照数组转为 Map：
-// key=price, value=size，后续增量更新 O(1)。
+// Convert snapshot arrays to Maps:
+// key=price, value=size; enables O(1) incremental updates later.
 function buildSideMap(levels: PriceLevel[]): Map<number, number> {
   const next = new Map<number, number>();
 
@@ -81,8 +81,8 @@ function buildSideMap(levels: PriceLevel[]): Map<number, number> {
   return next;
 }
 
-// 应用增量档位：
-// size=0 代表删除该价格档；否则写入/覆盖该档。
+// Apply incremental levels:
+// size=0 means delete this price level; otherwise set/overwrite it.
 function applyLevels(side: Map<number, number>, levels: PriceLevel[]): boolean {
   let changed = false;
 
@@ -104,7 +104,7 @@ function applyLevels(side: Map<number, number>, levels: PriceLevel[]): boolean {
   return changed;
 }
 
-// 防御性裁剪：限制单侧档位数量，避免滚动高度和内存无限增长。
+// Defensive trimming: limit levels per side to cap scroll height and memory growth.
 function trimBookSide(side: Map<number, number>, bookSide: "bids" | "asks"): boolean {
   if (side.size <= MAX_BOOK_LEVELS_PER_SIDE) {
     return false;
@@ -122,13 +122,13 @@ function trimBookSide(side: Map<number, number>, bookSide: "bids" | "asks"): boo
   return changed;
 }
 
-// 交易去重后前插，始终保留最近 MAX_RECENT_TRADES 条。
+// Deduplicate trades then prepend; always keep only MAX_RECENT_TRADES latest items.
 function mergeTrades(current: TradeRecord[], incoming: TradeRecord[]): TradeRecord[] {
   if (incoming.length === 0) {
     return current;
   }
 
-  // 以 tradeId 去重，防止网络抖动导致重复推送。
+  // Deduplicate by tradeId to avoid duplicates from network jitter.
   const seen = new Set(current.map((trade) => trade.tradeId));
   const fresh = incoming.filter((trade) => !seen.has(trade.tradeId));
 
@@ -139,9 +139,9 @@ function mergeTrades(current: TradeRecord[], incoming: TradeRecord[]): TradeReco
   return [...fresh.reverse(), ...current].slice(0, MAX_RECENT_TRADES);
 }
 
-// Zustand 全局行情仓库：
-// - book 用 Map 存，更新高效
-// - version 字段驱动 selector 精准重算，减少无意义渲染
+// Global market store with Zustand:
+// - book uses Map for efficient writes
+// - version fields drive precise selector recomputation to reduce unnecessary renders
 export const useMarketStore = create<MarketStoreState>()(
   subscribeWithSelector((set) => ({
     marketId: DEFAULT_MARKET,
@@ -161,7 +161,7 @@ export const useMarketStore = create<MarketStoreState>()(
     },
     error: null,
     resetMarket: (marketId) =>
-      // 切市场时重置运行态，避免旧市场数据残留到新市场。
+      // Reset runtime state on market switch to avoid stale data carry-over.
       set((state) => ({
         marketId,
         bids: new Map<number, number>(),
@@ -181,7 +181,7 @@ export const useMarketStore = create<MarketStoreState>()(
         error: null
       })),
     hydrateSnapshot: (snapshot) =>
-      // snapshot 是“强一致基线”：直接覆盖 book/trades/seq。
+      // Snapshot is the strong-consistency baseline: overwrite book/trades/seq directly.
       set((state) => {
         const nextBids = buildSideMap(snapshot.bids);
         const nextAsks = buildSideMap(snapshot.asks);
@@ -202,7 +202,7 @@ export const useMarketStore = create<MarketStoreState>()(
       }),
     applyFrame: (frame) =>
       set((state) => {
-        // 一次处理一个动画帧批次，减少 store 更新频率。
+        // Process one animation-frame batch at a time to reduce store update frequency.
         let bookChanged = false;
 
         for (const delta of frame.deltas) {
@@ -216,7 +216,7 @@ export const useMarketStore = create<MarketStoreState>()(
         const tradeChanged = nextTrades !== state.trades;
 
         return {
-          // frame.lastSeq 来自 provider 的连续 seq 校验通过结果。
+          // frame.lastSeq is produced after provider-side sequential seq validation.
           lastSeq: frame.lastSeq,
           bookVersion: bookChanged ? state.bookVersion + 1 : state.bookVersion,
           trades: nextTrades,
@@ -227,7 +227,7 @@ export const useMarketStore = create<MarketStoreState>()(
       }),
     setConnectionState: (connectionState, reconnectAttempt = 0, error = null) =>
       set((state) => {
-        // 无变化直接返回旧 state，避免无意义订阅通知。
+        // Return previous state when unchanged to avoid unnecessary subscription notifications.
         if (
           state.connectionState === connectionState &&
           state.reconnectAttempt === reconnectAttempt &&
@@ -257,7 +257,7 @@ export const useMarketStore = create<MarketStoreState>()(
       }),
     markGap: (gap) =>
       set((state) => {
-        // gap 期间强制切到 gap-detected，并暴露错误信息给 UI。
+        // Force gap-detected during gap period and expose error state to UI.
         if (
           state.connectionState === "gap-detected" &&
           state.error === "Sequence gap detected" &&

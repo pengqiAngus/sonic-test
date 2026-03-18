@@ -3,7 +3,7 @@
 import { SWRConfig } from "swr";
 import { Toaster } from "sonner";
 
-// 全局 Provider：统一 SWR 默认策略与消息提示容器。
+// Global provider: centralize SWR defaults and toast container.
 export function Providers({ children }: { children: React.ReactNode }): React.ReactElement {
   return (
     <SWRConfig
