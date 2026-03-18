@@ -13,19 +13,10 @@ import type {
   TradeRecord
 } from "@/lib/types";
 
-// ---------------------------------------------------------------------
-// This file is the in-memory market model:
-// - websocket-provider handles incoming messages and throttling
-// - market-store materializes messages into renderable structures
-// - exposes minimal write APIs (read hooks are in lib/hooks.ts)
-// ---------------------------------------------------------------------
-
 const DEFAULT_MARKET: MarketId = "BTC-PERP";
 const MAX_RECENT_TRADES = 1000;
 const MAX_BOOK_LEVELS_PER_SIDE = 1000;
 
-// Delta payload grouped per animation frame:
-// high-frequency WebSocket messages are buffered and then committed in batches.
 export interface BufferedFrame {
   deltas: BookDeltaMessage[];
   trades: TradeRecord[];
@@ -34,14 +25,10 @@ export interface BufferedFrame {
 
 interface MarketStoreState {
   marketId: MarketId;
-  // Store book as Map (price -> size) for efficient incremental updates/deletes.
   bids: Map<number, number>;
   asks: Map<number, number>;
-  // Recent trades are ordered newest -> oldest (index 0 is always latest).
   trades: TradeRecord[];
   lastSeq: number;
-  // version acts as an explicit recomputation switch:
-  // Map is mutable and reference may stay the same, so selectors rely on version bumps.
   bookVersion: number;
   tradeVersion: number;
   connectionState: ConnectionState;

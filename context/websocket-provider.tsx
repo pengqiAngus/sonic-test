@@ -12,14 +12,6 @@ import { isObject, safeJsonParse } from "@/lib/utils";
 import { websocketMachine } from "@/lib/websocket-machine";
 import { useMarketStore, type BufferedFrame } from "@/store/market-store";
 
-// ---------------------------------------------------------------------
-// This file is the real-time pipeline hub:
-// 1) Build local baseline from snapshot first
-// 2) Consume WS deltas (trade/book_delta)
-// 3) Batch commits to Zustand via requestAnimationFrame
-// 4) Control connect/reconnect/gap recovery with xstate
-// ---------------------------------------------------------------------
-
 // Create an empty frame used to buffer deltas within one animation frame.
 function createEmptyFrame(lastSeq = 0): BufferedFrame {
   return {
@@ -124,14 +116,6 @@ export function WebSocketProvider({
   const [machineState, send] = useMachine(websocketMachine);
 
   // -------------------- use refs for high-frequency state to avoid render-per-message --------------------
-  // socketRef: current WebSocket handle
-  // rafRef: whether an RAF flush has already been queued
-  // pingIntervalRef/rateIntervalRef: timer handles for centralized cleanup
-  // intentionalCloseRef: distinguish intentional close vs unexpected close
-  // seqRef: latest local seq received (for gap detection)
-  // frameRef: current animation-frame buffer (trade + book delta)
-  // appliedSnapshotRef: avoid applying the same snapshot twice
-  // bookRateRef/tradeRateRef: per-second message counters
   const socketRef = useRef<WebSocket | null>(null);
   const rafRef = useRef<number | null>(null);
   const flushTimeoutRef = useRef<number | null>(null);
